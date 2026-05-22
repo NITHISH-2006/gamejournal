@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase';
 import ActivityFeed from '@/components/ActivityFeed';
 import UserStats from '@/components/UserStats';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -14,9 +15,13 @@ export default async function Home() {
           <p className="text-zinc-400">Log games, rate them, write reviews, and see what your friends are playing.</p>
         </div>
       ) : (
-        <UserStats userId={user.id} />
+        <ErrorBoundary>
+          <UserStats userId={user.id} />
+        </ErrorBoundary>
       )}
-      <ActivityFeed currentUserId={user?.id} />
+      <ErrorBoundary>
+        <ActivityFeed currentUserId={user?.id} />
+      </ErrorBoundary>
     </div>
   );
 }

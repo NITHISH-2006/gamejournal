@@ -7,14 +7,14 @@ export async function saveGameLog(
   game: { id: number; name: string; cover_url?: string | null; release_date?: string | null },
   status: string,
   rating: number,
-  review: string
+  review: string,
+  diaryDate?: string,
+  tags?: string[]
 ) {
   const supabase = await createClient();
-
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('You must be signed in to log games.');
 
-  // Guarantee the game row exists before inserting the FK reference
   await ensureGameCached(game);
 
   const { error } = await supabase.from('game_logs').insert({
@@ -23,6 +23,8 @@ export async function saveGameLog(
     status,
     rating,
     review: review.trim() || null,
+    diary_date: diaryDate || null,
+    tags: tags?.length ? tags : null,
   });
 
   if (error) {

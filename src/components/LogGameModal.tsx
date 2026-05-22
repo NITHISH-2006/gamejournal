@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Star, Loader2, CheckCircle } from 'lucide-react';
+import { Search, Star, Loader2, CheckCircle, Calendar } from 'lucide-react';
 import { searchGames } from '@/app/actions/igdb';
 import { saveGameLog } from '@/app/actions/logs';
 import { useToast } from '@/components/Toast';
@@ -26,7 +26,13 @@ const statuses = [
 ];
 
 function reset() {
-  return { query: '', results: [] as Game[], selectedGame: null as Game | null, status: 'playing', rating: 8, review: '', error: null as string | null, saved: false };
+  return {
+    query: '', results: [] as Game[], selectedGame: null as Game | null,
+    status: 'playing', rating: 8, review: '',
+    diaryDate: new Date().toISOString().split('T')[0],
+    tags: '',
+    error: null as string | null, saved: false,
+  };
 }
 
 export default function LogGameModal() {
@@ -37,6 +43,8 @@ export default function LogGameModal() {
   const [status, setStatus] = useState('playing');
   const [rating, setRating] = useState(8);
   const [review, setReview] = useState('');
+  const [diaryDate, setDiaryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [tags, setTags] = useState('');
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -46,10 +54,10 @@ export default function LogGameModal() {
   const handleOpenChange = (val: boolean) => {
     setOpen(val);
     if (!val) {
-      // Reset all state on close
       const r = reset();
       setQuery(r.query); setResults(r.results); setSelectedGame(r.selectedGame);
       setStatus(r.status); setRating(r.rating); setReview(r.review);
+      setDiaryDate(r.diaryDate); setTags(r.tags);
       setError(r.error); setSaved(r.saved);
     }
   };
@@ -76,7 +84,7 @@ export default function LogGameModal() {
     setSaving(true);
     setError(null);
     try {
-      await saveGameLog(selectedGame, status, rating, review);
+      await saveGameLog(selectedGame, status, rating, review, diaryDate || undefined, tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : []);
       setSaved(true);
       toast(`${selectedGame.name} logged!`);
       setTimeout(() => handleOpenChange(false), 1200);
@@ -187,6 +195,20 @@ export default function LogGameModal() {
               </div>
             </div>
 
+            {/* Diary date */}
+            <div>
+              <p className="text-xs text-zinc-400 uppercase tracking-wider mb-2">Date Played</p>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500 pointer-events-none" />
+                <Input
+                  type="date"
+                  value={diaryDate}
+                  onChange={(e) => setDiaryDate(e.target.value)}
+                  className="pl-9 bg-zinc-900 border-zinc-700 text-white"
+                />
+              </div>
+            </div>
+
             {/* Review */}
             <div>
               <p className="text-xs text-zinc-400 uppercase tracking-wider mb-2">Review (optional)</p>
@@ -195,6 +217,17 @@ export default function LogGameModal() {
                 value={review}
                 onChange={(e) => setReview(e.target.value)}
                 className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500 min-h-[90px] resize-none"
+              />
+            </div>
+
+            {/* Tags */}
+            <div>
+              <p className="text-xs text-zinc-400 uppercase tracking-wider mb-2">Tags (comma separated)</p>
+              <Input
+                placeholder="e.g. rpg, masterpiece, replay"
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+                className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500"
               />
             </div>
 
