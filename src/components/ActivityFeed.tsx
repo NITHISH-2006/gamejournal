@@ -23,7 +23,7 @@ type Log = {
   profiles: { username: string } | null;
 };
 
-type FeedMode = 'global' | 'following';
+type FeedMode = 'global' | 'following' | 'trending';
 
 const statusColors: Record<string, string> = {
   playing:   'bg-blue-600/20 text-blue-400',
@@ -43,7 +43,17 @@ export default function ActivityFeed({ currentUserId }: { currentUserId?: string
     setLoading(true);
     let data: any[] = [];
 
-    if (feedMode === 'following' && currentUserId) {
+    if (feedMode === 'trending') {
+      // Logs from the last 48 hours, ordered by most recent
+      const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+      const { data: rows } = await supabase
+        .from('game_logs')
+        .select('id, game_id, user_id, status, rating, review, diary_date, tags, created_at, games ( name, cover_url ), profiles ( username )')
+        .gte('created_at', cutoff)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      data = rows ?? [];
+    } else if (feedMode === 'following' && currentUserId) {
       const { data: followData } = await supabase
         .from('follows')
         .select('following_id')
@@ -96,7 +106,7 @@ export default function ActivityFeed({ currentUserId }: { currentUserId?: string
         <h2 className="text-xl font-semibold">Activity</h2>
         {currentUserId && (
           <div className="flex rounded-lg overflow-hidden border border-zinc-800 text-sm">
-            {(['global', 'following'] as FeedMode[]).map((m) => (
+            {(['global', 'following', 'trending'] as FeedMode[]).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
