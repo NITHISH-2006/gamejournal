@@ -24,7 +24,7 @@ export default async function DiscoverPage() {
   // Group by game_id client-side (Supabase free tier has no RPC aggregation without functions)
   const gameMap = new Map<number, { name: string; cover_url?: string; ratings: number[] }>();
   for (const row of topRaw ?? []) {
-    const g = row.games as { name: string; cover_url?: string } | null;
+    const g = row.games as unknown as { name: string; cover_url?: string } | null;
     if (!g) continue;
     if (!gameMap.has(row.game_id)) gameMap.set(row.game_id, { ...g, ratings: [] });
     gameMap.get(row.game_id)!.ratings.push(row.rating);
@@ -54,7 +54,7 @@ export default async function DiscoverPage() {
   for (const row of recentRaw ?? []) {
     if (seenRecent.has(row.game_id)) continue;
     seenRecent.add(row.game_id);
-    const g = row.games as { name: string; cover_url?: string } | null;
+    const g = row.games as unknown as { name: string; cover_url?: string } | null;
     if (g) recentGames.push({ id: row.game_id, name: g.name, cover_url: g.cover_url });
     if (recentGames.length >= 12) break;
   }
