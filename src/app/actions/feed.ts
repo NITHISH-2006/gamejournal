@@ -48,11 +48,13 @@ export async function getFeedData(
         .limit(30);
 
       if (error) { console.error('feed following error:', error.message); return []; }
+      console.log(`[getFeedData] following: ${data?.length ?? 0} rows`);
       return normalize(data ?? []);
     }
 
     if (type === 'trending') {
-      const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+      // Broadened to 30 days for testing — tighten to 48h once data is confirmed
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
       const { data, error } = await supabase
         .from('game_logs')
@@ -67,8 +69,8 @@ export async function getFeedData(
         .limit(50);
 
       if (error) { console.error('feed trending error:', error.message); return []; }
+      console.log(`[getFeedData] trending (30d): ${data?.length ?? 0} rows`);
 
-      // Sort by game frequency in the window — most-logged games first
       const raw = normalize(data ?? []);
       const freq = new Map<number, number>();
       for (const l of raw) freq.set(l.game_id, (freq.get(l.game_id) ?? 0) + 1);
@@ -88,6 +90,7 @@ export async function getFeedData(
       .limit(30);
 
     if (error) { console.error('feed global error:', error.message); return []; }
+    console.log(`[getFeedData] global: ${data?.length ?? 0} rows`);
     return normalize(data ?? []);
 
   } catch (err: any) {
@@ -97,6 +100,10 @@ export async function getFeedData(
 }
 
 function normalize(rows: any[]): FeedLog[] {
+  if (rows.length > 0) {
+    // Log first row shape so we can see what Supabase actually returns
+    console.log('[normalize] first row shape:', JSON.stringify(rows[0]));
+  }
   return rows.map((r) => ({
     id: r.id,
     game_id: r.game_id,
@@ -107,8 +114,10 @@ function normalize(rows: any[]): FeedLog[] {
     diary_date: r.diary_date ?? null,
     tags: r.tags ?? null,
     created_at: r.created_at,
-    game_name: r.games?.name ?? r.games?.[0]?.name ?? 'Unknown Game',
-    game_cover: r.games?.cover_url ?? r.games?.[0]?.cover_url ?? null,
-    username: r.profiles?.username ?? r.profiles?.[0]?.username ?? null,
+    // Supabase returns joins as array OR object depending on relation type
+    // Handle both shapes defensively
+    game_name: Array.isArray(r.games) ? (r.games[0]?.name ?? 'Unknown') : (r.games?.name ?? 'Unknown'),
+    game_cover: Array.isArray(r.games) ? (r.games[0]?.cover_url ?? null) : (r.games?.cover_url ?? null),
+    username: Array.isArray(r.profiles) ? (r.profiles[0]?.username ?? null) : (r.profiles?.username ?? null),
   }));
 }
