@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase';
+import { revalidatePath } from 'next/cache';
 
 export async function likeLog(logId: string) {
   const supabase = await createClient();
@@ -11,8 +12,9 @@ export async function likeLog(logId: string) {
     .from('log_likes')
     .insert({ user_id: user.id, log_id: logId });
 
-  // Ignore duplicate — already liked
   if (error && error.code !== '23505') throw new Error(error.message);
+
+  revalidatePath('/');
 }
 
 export async function unlikeLog(logId: string) {
@@ -27,6 +29,8 @@ export async function unlikeLog(logId: string) {
     .eq('log_id', logId);
 
   if (error) throw new Error(error.message);
+
+  revalidatePath('/');
 }
 
 export async function getLikesForLogs(logIds: string[]): Promise<Record<string, { count: number; likedByMe: boolean }>> {

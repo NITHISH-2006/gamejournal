@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase';
+import { revalidatePath } from 'next/cache';
 import { ensureGameCached } from '@/app/actions/igdb';
 
 export async function saveGameLog(
@@ -31,6 +32,9 @@ export async function saveGameLog(
     console.error('saveGameLog error:', error);
     throw new Error(error.message);
   }
+
+  revalidatePath('/');
+  revalidatePath(`/game/${game.id}`);
 
   return { success: true };
 }

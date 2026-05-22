@@ -32,8 +32,24 @@ const statusColors: Record<string, string> = {
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const { data: game } = await supabase.from('games').select('name').eq('id', id).single();
-  return { title: game ? `${game.name} — GameJournal` : 'Game — GameJournal' };
+  const { data: game } = await supabase.from('games').select('name, cover_url, summary').eq('id', id).single();
+  const title = game ? `${game.name} — GameJournal` : 'Game — GameJournal';
+  const description = game?.summary?.slice(0, 160) ?? 'View logs, ratings, and reviews on GameJournal.';
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: game?.cover_url ? [{ url: game.cover_url, width: 264, height: 374 }] : [],
+    },
+    twitter: {
+      card: 'summary',
+      title,
+      description,
+    },
+  };
 }
 
 export default async function GamePage({ params }: { params: Promise<{ id: string }> }) {

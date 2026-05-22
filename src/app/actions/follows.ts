@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase';
+import { revalidatePath } from 'next/cache';
 
 export async function followUser(followingId: string) {
   const supabase = await createClient();
@@ -13,6 +14,9 @@ export async function followUser(followingId: string) {
     .insert({ follower_id: user.id, following_id: followingId });
 
   if (error) throw new Error(error.message);
+
+  revalidatePath('/');
+  revalidatePath(`/user/${followingId}`);
 }
 
 export async function unfollowUser(followingId: string) {
@@ -27,6 +31,9 @@ export async function unfollowUser(followingId: string) {
     .eq('following_id', followingId);
 
   if (error) throw new Error(error.message);
+
+  revalidatePath('/');
+  revalidatePath(`/user/${followingId}`);
 }
 
 export async function getFollowCounts(userId: string) {
