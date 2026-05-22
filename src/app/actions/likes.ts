@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
+import { createNotification } from '@/app/actions/notifications';
 
 export async function likeLog(logId: string) {
   const supabase = await createClient();
@@ -13,6 +14,10 @@ export async function likeLog(logId: string) {
     .insert({ user_id: user.id, log_id: logId });
 
   if (error && error.code !== '23505') throw new Error(error.message);
+
+  // Notify log owner
+  const { data: log } = await supabase.from('game_logs').select('user_id').eq('id', logId).single();
+  if (log) await createNotification(log.user_id, user.id, 'like', logId).catch(() => {});
 
   revalidatePath('/');
 }

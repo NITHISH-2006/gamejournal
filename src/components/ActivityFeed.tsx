@@ -70,7 +70,7 @@ export default function ActivityFeed({ currentUserId }: { currentUserId?: string
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`px-4 py-1.5 capitalize transition-colors ${
+              className={`px-4 py-2.5 capitalize transition-colors text-sm min-w-[80px] ${
                 mode === m ? 'bg-violet-600 text-white' : 'bg-zinc-900 text-zinc-400 hover:text-white'
               }`}
             >

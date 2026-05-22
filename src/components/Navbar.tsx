@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase';
 import { getCurrentProfile } from '@/app/actions/profiles';
 import AuthButton from '@/components/AuthButton';
 import LogGameModal from '@/components/LogGameModal';
+import NotificationBell from '@/components/NotificationBell';
 import { Gamepad2 } from 'lucide-react';
 
 export default async function Navbar() {
@@ -30,6 +31,7 @@ export default async function Navbar() {
         </nav>
 
         <div className="flex items-center gap-3">
+          {user && <NotificationBell />}
           {user && <LogGameModal />}
           <AuthButton user={user} username={profile?.username} />
         </div>
