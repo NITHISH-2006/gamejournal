@@ -6,16 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Loader2 } from 'lucide-react';
+import Link from 'next/link';
 
 type Props = {
   user: { email?: string } | null;
+  username?: string | null;
 };
 
-export default function AuthButton({ user }: Props) {
+export default function AuthButton({ user, username }: Props) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [usernameInput, setUsernameInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,9 +41,19 @@ export default function AuthButton({ user }: Props) {
       if (error) setError(error.message);
       else { setOpen(false); window.location.reload(); }
     } else {
-      const { error } = await supabase.auth.signUp({ email, password });
+      if (!usernameInput.trim()) { setError('Username is required'); setLoading(false); return; }
+      if (!/^[a-z0-9_]{3,20}$/.test(usernameInput)) {
+        setError('Username: 3–20 chars, lowercase letters, numbers, underscores only');
+        setLoading(false);
+        return;
+      }
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { username: usernameInput.toLowerCase() } },
+      });
       if (error) setError(error.message);
-      else setMessage('Check your email to confirm your account.');
+      else setMessage('Account created! Check your email to confirm.');
     }
 
     setLoading(false);
@@ -49,7 +62,13 @@ export default function AuthButton({ user }: Props) {
   if (user) {
     return (
       <div className="flex items-center gap-3">
-        <span className="text-sm text-zinc-400 hidden sm:block">{user.email}</span>
+        {username ? (
+          <Link href={`/user/${username}`} className="text-sm text-zinc-400 hover:text-white transition-colors hidden sm:block">
+            @{username}
+          </Link>
+        ) : (
+          <span className="text-sm text-zinc-400 hidden sm:block">{user.email}</span>
+        )}
         <Button variant="outline" size="sm" onClick={handleSignOut} className="border-zinc-700 text-zinc-300 hover:text-white">
           Sign Out
         </Button>
@@ -72,7 +91,16 @@ export default function AuthButton({ user }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {mode === 'signup' && (
+            <Input
+              placeholder="Username (e.g. gamer42)"
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value.toLowerCase())}
+              required
+              className="bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500"
+            />
+          )}
           <Input
             type="email"
             placeholder="Email"

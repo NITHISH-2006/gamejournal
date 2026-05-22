@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Search, Star, Loader2, CheckCircle } from 'lucide-react';
 import { searchGames } from '@/app/actions/igdb';
 import { saveGameLog } from '@/app/actions/logs';
+import { useToast } from '@/components/Toast';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -40,6 +41,7 @@ export default function LogGameModal() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const handleOpenChange = (val: boolean) => {
     setOpen(val);
@@ -76,9 +78,12 @@ export default function LogGameModal() {
     try {
       await saveGameLog(selectedGame, status, rating, review);
       setSaved(true);
+      toast(`${selectedGame.name} logged!`);
       setTimeout(() => handleOpenChange(false), 1200);
     } catch (err: any) {
-      setError(err.message ?? 'Something went wrong. Please try again.');
+      const msg = err.message ?? 'Something went wrong. Please try again.';
+      setError(msg);
+      toast(msg, 'error');
     } finally {
       setSaving(false);
     }

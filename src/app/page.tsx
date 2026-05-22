@@ -8,21 +8,15 @@ export default async function Home() {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-10">
-
-      {/* Hero — signed out */}
-      {!user && (
+      {!user ? (
         <div className="mb-10 p-10 rounded-2xl border border-zinc-800 bg-zinc-900 text-center">
           <h2 className="text-3xl font-bold mb-2">Track every game you play.</h2>
-          <p className="text-zinc-400 text-base">
-            Log games, rate them, write reviews, and see what your friends are playing.
-          </p>
+          <p className="text-zinc-400">Log games, rate them, write reviews, and see what your friends are playing.</p>
         </div>
+      ) : (
+        <UserStats userId={user.id} />
       )}
-
-      {/* Stats — signed in */}
-      {user && <UserStats userId={user.id} />}
-
-      <ActivityFeed />
+      <ActivityFeed currentUserId={user?.id} />
     </div>
   );
 }

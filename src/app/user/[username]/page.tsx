@@ -1,12 +1,13 @@
-import { redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
+import { getProfileByUsername } from '@/app/actions/profiles';
+import { getFollowCounts, isFollowing } from '@/app/actions/follows';
+import { getUserLists } from '@/app/actions/lists';
+import FollowButton from '@/components/FollowButton';
 import { Card } from '@/components/ui/card';
 import { Star } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import { getFollowCounts } from '@/app/actions/follows';
-import { getUserLists } from '@/app/actions/lists';
-import CreateListModal from '@/components/CreateListModal';
 
 type Log = {
   id: string;
@@ -25,45 +26,75 @@ const statusColors: Record<string, string> = {
   abandoned: 'bg-red-600/20 text-red-400',
 };
 
-export default async function ProfilePage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/');
+export async function generateMetadata({ params }: { params: Promise<{ username: string }> }) {
+  const { username } = await params;
+  return { title: `@${username} — GameJournal` };
+}
 
-  const [logsResult, followCounts, lists] = await Promise.all([
+export default async function UserProfilePage({ params }: { params: Promise<{ username: string }> }) {
+  const { username } = await params;
+  const supabase = await createClient();
+
+  const [profile, { data: { user: currentUser } }] = await Promise.all([
+    getProfileByUsername(username),
+    supabase.auth.getUser(),
+  ]);
+
+  if (!profile) notFound();
+
+  const isOwnProfile = currentUser?.id === profile.id;
+
+  const [logsResult, followCounts, lists, following] = await Promise.all([
     supabase
       .from('game_logs')
       .select('id, game_id, status, rating, review, created_at, games ( name, cover_url )')
-      .eq('user_id', user.id)
+      .eq('user_id', profile.id)
       .order('created_at', { ascending: false }),
-    getFollowCounts(user.id),
-    getUserLists(user.id),
+    getFollowCounts(profile.id),
+    getUserLists(profile.id),
+    currentUser && !isOwnProfile ? isFollowing(profile.id) : Promise.resolve(false),
   ]);
 
   const allLogs = (logsResult.data ?? []) as Log[];
-
-  const total     = allLogs.length;
-  const completed = allLogs.filter((l) => l.status === 'completed').length;
-  const playing   = allLogs.filter((l) => l.status === 'playing').length;
-  const backlog   = allLogs.filter((l) => l.status === 'backlog').length;
-  const ratings   = allLogs.map((l) => l.rating).filter(Boolean) as number[];
+  const ratings = allLogs.map((l) => l.rating).filter(Boolean) as number[];
   const avgRating = ratings.length
     ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)
     : null;
+
+  const stats = [
+    { label: 'Logged',    value: allLogs.length },
+    { label: 'Completed', value: allLogs.filter((l) => l.status === 'completed').length },
+    { label: 'Playing',   value: allLogs.filter((l) => l.status === 'playing').length },
+    { label: 'Avg Rating', value: avgRating ? `${avgRating}/10` : '—' },
+  ];
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-10 space-y-10">
 
       {/* Profile header */}
-      <div className="flex items-center gap-5">
+      <div className="flex items-start gap-5">
         <div className="w-16 h-16 rounded-full bg-violet-600 flex items-center justify-center text-2xl font-bold select-none flex-shrink-0">
-          {user.email?.[0].toUpperCase()}
+          {profile.username[0].toUpperCase()}
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">{user.email}</h1>
-          <p className="text-zinc-500 text-sm mt-0.5">
-            Member since {format(new Date(user.created_at), 'MMMM yyyy')}
-          </p>
+        <div className="flex-1">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold">
+              {profile.display_name || `@${profile.username}`}
+            </h1>
+            {profile.display_name && (
+              <span className="text-zinc-500 text-sm">@{profile.username}</span>
+            )}
+            {/* Follow button — only shown to other signed-in users */}
+            {currentUser && !isOwnProfile && (
+              <FollowButton targetUserId={profile.id} initialFollowing={following as boolean} />
+            )}
+            {isOwnProfile && (
+              <Link href="/profile" className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1 transition-colors">
+                Edit Profile
+              </Link>
+            )}
+          </div>
+          {profile.bio && <p className="text-zinc-400 text-sm mt-1">{profile.bio}</p>}
           <div className="flex gap-4 mt-2 text-sm text-zinc-400">
             <span><strong className="text-white">{followCounts.followers}</strong> followers</span>
             <span><strong className="text-white">{followCounts.following}</strong> following</span>
@@ -72,14 +103,8 @@ export default async function ProfilePage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {[
-          { label: 'Logged',    value: total },
-          { label: 'Completed', value: completed },
-          { label: 'Playing',   value: playing },
-          { label: 'Backlog',   value: backlog },
-          { label: 'Avg Rating', value: avgRating ? `${avgRating}/10` : '—' },
-        ].map(({ label, value }) => (
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {stats.map(({ label, value }) => (
           <div key={label} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
             <p className="text-2xl font-bold">{value}</p>
             <p className="text-xs text-zinc-500 mt-1 uppercase tracking-wider">{label}</p>
@@ -90,9 +115,9 @@ export default async function ProfilePage() {
       {/* Cover grid */}
       {allLogs.filter((l) => l.games?.cover_url).length > 0 && (
         <div>
-          <h2 className="text-lg font-semibold mb-3">Game Covers</h2>
+          <h2 className="text-lg font-semibold mb-3">Games</h2>
           <div className="grid grid-cols-6 sm:grid-cols-10 gap-2">
-            {allLogs.filter((l) => l.games?.cover_url).map((log) => (
+            {allLogs.filter((l) => l.games?.cover_url).slice(0, 20).map((log) => (
               <Link key={log.id} href={`/game/${log.game_id}`}>
                 <img
                   src={log.games!.cover_url!}
@@ -106,16 +131,10 @@ export default async function ProfilePage() {
         </div>
       )}
 
-      {/* Lists */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Lists</h2>
-          <CreateListModal />
-        </div>
-
-        {lists.length === 0 ? (
-          <p className="text-zinc-500 text-sm">No lists yet. Create one to organise your games.</p>
-        ) : (
+      {/* Public lists */}
+      {lists.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold mb-3">Lists</h2>
           <div className="grid sm:grid-cols-2 gap-3">
             {lists.map((list: any) => (
               <Link key={list.id} href={`/list/${list.id}`}>
@@ -127,19 +146,19 @@ export default async function ProfilePage() {
               </Link>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* All logs */}
+      {/* Recent logs */}
       <div>
-        <h2 className="text-lg font-semibold mb-4">All Logs</h2>
+        <h2 className="text-lg font-semibold mb-4">Recent Logs</h2>
         {allLogs.length === 0 ? (
           <Card className="p-12 text-center bg-zinc-900 border-zinc-800">
             <p className="text-zinc-400">No games logged yet.</p>
           </Card>
         ) : (
           <div className="space-y-3">
-            {allLogs.map((log) => (
+            {allLogs.slice(0, 10).map((log) => (
               <Card key={log.id} className="bg-zinc-900 border-zinc-800 p-0">
                 <div className="flex gap-4 p-4">
                   <Link href={`/game/${log.game_id}`} className="flex-shrink-0">
