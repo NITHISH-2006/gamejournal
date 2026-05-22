@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
 import { followUser, unfollowUser } from '@/app/actions/follows';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/Toast';
@@ -13,25 +13,30 @@ type Props = {
 
 export default function FollowButton({ targetUserId, initialFollowing }: Props) {
   const [following, setFollowing] = useState(initialFollowing);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const { toast } = useToast();
 
-  const toggle = () => {
-    startTransition(async () => {
-      try {
-        if (following) {
-          await unfollowUser(targetUserId);
-          setFollowing(false);
-          toast('Unfollowed');
-        } else {
-          await followUser(targetUserId);
-          setFollowing(true);
-          toast('Following!');
-        }
-      } catch (err: any) {
-        toast(err.message ?? 'Something went wrong', 'error');
+  const toggle = async () => {
+    if (pending) return;
+    setPending(true);
+    try {
+      if (following) {
+        await unfollowUser(targetUserId);
+        setFollowing(false);
+        toast('Unfollowed');
+      } else {
+        await followUser(targetUserId);
+        setFollowing(true);
+        toast('Now following!');
       }
-    });
+    } catch (err: any) {
+      // Surface the actual error — common causes: not signed in, already following
+      const msg = err.message ?? 'Something went wrong';
+      toast(msg, 'error');
+      console.error('FollowButton error:', msg);
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -41,11 +46,14 @@ export default function FollowButton({ targetUserId, initialFollowing }: Props) 
       variant={following ? 'outline' : 'default'}
       size="sm"
       className={following
-        ? 'border-zinc-700 text-zinc-300 hover:border-red-800 hover:text-red-400'
-        : 'bg-violet-600 hover:bg-violet-700 text-white'
+        ? 'border-zinc-700 text-zinc-300 hover:border-red-800 hover:text-red-400 disabled:opacity-60'
+        : 'bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-60'
       }
     >
-      {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : following ? 'Following' : 'Follow'}
+      {pending
+        ? <Loader2 className="h-4 w-4 animate-spin" />
+        : following ? 'Following' : 'Follow'
+      }
     </Button>
   );
 }

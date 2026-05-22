@@ -50,9 +50,9 @@ export default async function UserProfilePage({ params }: { params: Promise<{ us
       .select('id, game_id, status, rating, review, created_at, games ( name, cover_url )')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false }),
-    getFollowCounts(profile.id),
-    getUserLists(profile.id),
-    currentUser && !isOwnProfile ? isFollowing(profile.id) : Promise.resolve(false),
+    getFollowCounts(profile.id).catch(() => ({ followers: 0, following: 0 })),
+    getUserLists(profile.id).catch(() => []),
+    currentUser && !isOwnProfile ? isFollowing(profile.id).catch(() => false) : Promise.resolve(false),
   ]);
 
   const allLogs = (logsResult.data ?? []) as unknown as Log[];

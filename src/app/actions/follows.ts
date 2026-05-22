@@ -32,10 +32,14 @@ export async function unfollowUser(followingId: string) {
 export async function getFollowCounts(userId: string) {
   const supabase = await createClient();
 
-  const [{ count: followers }, { count: following }] = await Promise.all([
+  const [{ count: followers, error: e1 }, { count: following, error: e2 }] = await Promise.all([
     supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', userId),
     supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', userId),
   ]);
+
+  if (e1) console.error('getFollowCounts followers error:', e1.message);
+  if (e2) console.error('getFollowCounts following error:', e2.message);
+  if (e1 || e2) throw new Error(e1?.message ?? e2?.message ?? 'Failed to get follow counts');
 
   return { followers: followers ?? 0, following: following ?? 0 };
 }

@@ -36,8 +36,8 @@ export default async function ProfilePage() {
       .select('id, game_id, status, rating, review, created_at, games ( name, cover_url )')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false }),
-    getFollowCounts(user.id),
-    getUserLists(user.id),
+    getFollowCounts(user.id).catch(() => ({ followers: 0, following: 0 })),
+    getUserLists(user.id).catch(() => []),
   ]);
 
   const allLogs = (logsResult.data ?? []) as unknown as Log[];
