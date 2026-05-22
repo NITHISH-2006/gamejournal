@@ -18,7 +18,7 @@ export default function UserSearch() {
     if (q.length < 2) { setResults([]); return; }
     startTransition(async () => {
       const data = await searchProfiles(q);
-      setResults(data as Profile[]);
+      setResults(data as unknown as Profile[]);
     });
   };
 

@@ -58,7 +58,7 @@ export default function ActivityFeed({ currentUserId }: { currentUserId?: string
         .order('created_at', { ascending: false })
         .limit(30);
 
-      setLogs((data as Log[]) ?? []);
+      setLogs((data as unknown as Log[]) ?? []);
     } else {
       const { data } = await supabase
         .from('game_logs')
@@ -66,7 +66,7 @@ export default function ActivityFeed({ currentUserId }: { currentUserId?: string
         .order('created_at', { ascending: false })
         .limit(30);
 
-      setLogs((data as Log[]) ?? []);
+      setLogs((data as unknown as Log[]) ?? []);
     }
 
     setLoading(false);
