@@ -55,7 +55,7 @@ export default async function UserProfilePage({ params }: { params: Promise<{ us
     currentUser && !isOwnProfile ? isFollowing(profile.id) : Promise.resolve(false),
   ]);
 
-  const allLogs = (logsResult.data ?? []) as Log[];
+  const allLogs = (logsResult.data ?? []) as unknown as Log[];
   const ratings = allLogs.map((l) => l.rating).filter(Boolean) as number[];
   const avgRating = ratings.length
     ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)

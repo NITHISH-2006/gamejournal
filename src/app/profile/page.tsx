@@ -40,7 +40,7 @@ export default async function ProfilePage() {
     getUserLists(user.id),
   ]);
 
-  const allLogs = (logsResult.data ?? []) as Log[];
+  const allLogs = (logsResult.data ?? []) as unknown as Log[];
 
   const total     = allLogs.length;
   const completed = allLogs.filter((l) => l.status === 'completed').length;

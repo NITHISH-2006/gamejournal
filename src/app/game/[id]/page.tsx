@@ -49,7 +49,7 @@ export default async function GamePage({ params }: { params: Promise<{ id: strin
 
   if (!gameResult.data) notFound();
   const game = gameResult.data;
-  const allLogs = (logsResult.data ?? []) as Log[];
+  const allLogs = (logsResult.data ?? []) as unknown as Log[];
 
   const ratings = allLogs.map((l) => l.rating).filter(Boolean) as number[];
   const avgRating = ratings.length
