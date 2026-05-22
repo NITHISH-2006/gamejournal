@@ -18,7 +18,7 @@ export default async function ListPage({ params }: { params: Promise<{ id: strin
 
   if (!list) notFound();
 
-  const items = (list.list_games ?? []) as {
+  const items = (list.list_games ?? []) as unknown as {
     game_id: number;
     added_at: string;
     games: { name: string; cover_url?: string } | null;
