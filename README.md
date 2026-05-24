@@ -1,85 +1,33 @@
-# GameJournal
+# GameJournal 🎮
+**A social platform for video game tracking, reviews, and discovery.**
 
-**My Letterboxd for Video Games** 🎮
+[Link to Live Demo](https://gamejournal.vercel.app/)
 
-A beautiful place to track, rate, review, and remember every game I play.
+## 🚀 The Vision
+GameJournal bridges the gap between tracking your gaming backlog and discovering new experiences through a social lens. Designed for gamers who want a "Letterboxd-like" experience to journal their progress and connect with others.
 
-Built with passion in Tamil Nadu, India.
+## 🛠️ Tech Stack
+* **Frontend:** Next.js (App Router), Tailwind CSS, Framer Motion
+* **Backend:** Supabase (PostgreSQL, Auth, Realtime)
+* **API/Infrastructure:** Vercel Edge Runtime, Server Actions
+* **Media:** Custom OG image generation (`@resvg/resvg-js`)
 
-![GameJournal Preview](https://via.placeholder.com/800x400?text=GameJournal+Screenshot)
+## 🔑 Key Features
+* **Social Graph:** Real-time activity feed with Global, Following, and Trending views.
+* **Diary & Logging:** Track gameplay with custom tags, review ratings, and diary dates.
+* **Dynamic Social Sharing:** Server-side generated OpenGraph cards for every log, optimized for Twitter/Discord sharing.
+* **Database Security:** Robust RLS policies ensuring data integrity while maintaining performant public read access.
 
-## ✨ What is GameJournal?
+## 🧠 Technical Challenges Solved
+1. **Performance at Scale:** Implemented server-side data fetching via Server Actions to bypass client-side RLS bottlenecks.
+2. **Dynamic Social Preview:** Built an Edge-runtime API that generates 1200x630 OG images on the fly, rendering game metadata dynamically.
+3. **Optimistic UI:** Implemented local state updates for "Like" actions to ensure a sub-100ms response feel for users.
 
-I always loved how Letterboxd helped people track movies properly — writing reviews, making lists, and sharing opinions. But I couldn't find anything similar for **video games**.
+## ⚙️ Getting Started
+1. Clone the repo: `git clone https://github.com/NITHISH-2006/gamejournal.git`
+2. Install dependencies: `npm install`
+3. Set up environment variables (.env.local): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+4. Run locally: `npm run dev`
 
-So I built one.
-
-GameJournal lets you:
-- Log every game you play (Backlog, Playing, Completed, Abandoned)
-- Give star ratings (out of 10)
-- Write reviews and thoughts
-- See your gaming stats and history
-- Browse other people's logs and discover new games
-
-## 🚀 Features
-
-- **Fast Game Search** powered by IGDB (thousands of games)
-- **Beautiful Logging Modal** — search, select status, rate, and write review in seconds
-- **Real-time Activity Feed**
-- **Personal Profile** with stats (games logged, average rating, etc.)
-- **Game Detail Pages** — see what everyone thinks about a particular game
-- **Clean Dark Mode** UI inspired by Letterboxd
-- Full user authentication (Email + Password)
-
-## 🛠 Tech Stack
-
-- **Frontend**: Next.js 16 (App Router) + TypeScript + Tailwind CSS
-- **UI Components**: shadcn/ui
-- **Backend**: Supabase (PostgreSQL + Auth + Realtime)
-- **Game Database**: IGDB API
-- **Icons**: Lucide React
-
-## 📸 Screenshots
-
-*(Add screenshots here later — especially the logging modal and profile page)*
-
-## 🛠 How to Run Locally
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/NITHISH-2006/gamejournal.git
-   cd gamejournal
-2. Install dependencies:
-    ```Bash
-    npm install
-3. Create .env.local file and add your credentials (Supabase + IGDB)
-4. Run the development server:
-    ```Bash
-    npm run dev
-5. Open http://localhost:3000
-
-## Current Status (May 2026)
-
-Core logging system ✅
-Authentication & Profiles ✅
-Activity Feed with realtime ✅
-Game detail pages ✅
-Basic stats dashboard ✅
-
-## Next Goals:
-
-Custom game lists & collections
-Following system (social feed)
-Mobile PWA support
-Steam library import
-Public launch & community building
-
-
-## About Me
-Hi, I'm Nithish Chandrasekaran, a B.Tech IT student from Tamil Nadu. Passionate about building useful tools and learning full-stack development.
-This project started as a simple idea to solve my own problem (managing a huge Steam backlog) and grew into something I'm really proud of.
-📬 Connect With Me
-
-GitHub: @NITHISH-2006
-LinkedIn: Nithish Chandrasekaran
-Email: itsmenithish.official@gmail.com
+---
+*Built by Nithish C.*
