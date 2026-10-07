@@ -474,11 +474,25 @@ export function parseTitleList(input: string): ParseResult {
       continue;
     }
 
+    /*
+     * `status: null`, not `'backlog'`.
+     *
+     * A plain title list says nothing about status — it is a list of names and
+     * nothing else. Claiming `backlog` here was destructive: `commitImport`
+     * builds its update patch from every non-null field, so re-importing the
+     * same list moved every one of the user's completed logs back to backlog.
+     * The file expressed no opinion about status, so the parser must not invent
+     * one.
+     *
+     * `null` means "not specified by the file". For a *new* log,
+     * `commitImport` still applies a `backlog` default; for an *existing* log,
+     * `null` means the field is left untouched.
+     */
     rows.push({
       line: total,
       title,
       rating: null,
-      status: 'backlog',
+      status: null,
       playedOn: null,
       review: null,
       playtimeHours: null,

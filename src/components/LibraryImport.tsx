@@ -39,6 +39,22 @@ export default function LibraryImport() {
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  /*
+   * The file text is retained rather than a server-side plan token.
+   *
+   * The previous design previewed on the server, cached the resolved plan in a
+   * module-level Map, and passed back a token. `commitImport` read that Map — but
+   * Server Actions on Vercel run in separate lambda invocations, so the commit
+   * almost never hit the same process that stored the plan. Users were told
+   * "that preview has expired" immediately after seeing it, and the import
+   * feature was unusable in production while working fine locally.
+   *
+   * Holding the text here means both steps are self-contained. It costs a few
+   * hundred KB of client state for a 4 MB file cap, and the server still
+   * re-parses and re-validates everything rather than trusting this copy.
+   */
+  const [fileContent, setFileContent] = useState('');
+
   // Ref guard: `pending` is not updated synchronously, so two events in one
   // frame would both pass a state-based check.
   const busy = useRef(false);
@@ -48,6 +64,7 @@ export default function LibraryImport() {
     setResult(null);
     setError(null);
     setFilename('');
+    setFileContent('');
     if (fileRef.current) fileRef.current.value = '';
   }
 
@@ -74,11 +91,22 @@ export default function LibraryImport() {
       startTransition(async () => {
         try {
           const next = await previewImport(file.name, content);
+
+          // Kept only when the preview succeeded, so a failed upload does not
+          // leave a commit button that would re-send a file we could not read.
+          if (next.total > 0 && next.toCreate + next.toUpdate > 0) {
+            setFileContent(content);
+          } else {
+            setFileContent('');
+          }
+
           setPreview(next);
-          if (!next.token) {
+
+          if (next.total === 0) {
             setError(next.issues[0]?.message ?? 'Nothing to import in that file.');
           }
         } catch (err) {
+          setFileContent('');
           setError((err as Error).message);
         } finally {
           busy.current = false;
@@ -92,14 +120,21 @@ export default function LibraryImport() {
   }
 
   function handleCommit() {
-    if (busy.current || !preview?.token) return;
+    // Both the filename and the content must be present. The content is what
+    // makes the commit self-contained, so an empty string means the preview that
+    // produced this screen is no longer usable.
+    if (busy.current || !preview || !fileContent) return;
 
     busy.current = true;
     startTransition(async () => {
       try {
-        const committed = await commitImport(preview.token);
+        const committed = await commitImport(filename, fileContent);
         setResult(committed);
         setPreview(null);
+        // The file is spent; keeping 4 MB of text alive would let a second
+        // commit fire from a stale button.
+        setFileContent('');
+
         toast(
           `Imported ${committed.created} new ${committed.created === 1 ? 'game' : 'games'}` +
             (committed.updated > 0 ? `, updated ${committed.updated}` : '')
@@ -197,7 +232,13 @@ export default function LibraryImport() {
         </p>
       )}
 
-      {preview?.token && (
+      {/*
+         Gated on the retained file content, not on a preview token.
+         A preview with nothing writable — every row unmatched, or an empty
+         file — has no commit action, because confirming it would only write
+         zero rows while telling the user the import finished.
+       */}
+      {preview && fileContent && preview.toCreate + preview.toUpdate > 0 && (
         <div className="mt-4 rounded-xl border border-white/10 bg-white/4 p-3">
           <div className="flex items-baseline justify-between gap-2">
             <p className="flex items-center gap-1.5 text-sm font-medium">

@@ -308,8 +308,17 @@ describe('parseTitleList', () => {
     expect(parseTitleList('12) Hades').rows[0].title).toBe('Hades');
   });
 
-  it('defaults every row to backlog, since a bare list is a wishlist', () => {
-    expect(parseTitleList('Celeste').rows[0].status).toBe('backlog');
+  it('reports no status at all, since a bare list says nothing about one', () => {
+    /*
+       `null`, not `backlog`.
+       `commitImport` builds its update patch from every non-null field, so a
+       parser that claimed `backlog` here meant re-importing the same plain list
+       moved every completed log in the user's library back to backlog. The file
+       expressed no opinion, so the parser must not invent one. `commitImport`
+       still applies a `backlog` default for rows it is creating.
+     */
+    expect(parseTitleList('Celeste').rows[0].status).toBeNull();
+    expect(parseTitleList('Celeste').rows[0].rating).toBeNull();
   });
 });
 
