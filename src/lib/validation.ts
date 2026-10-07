@@ -94,6 +94,13 @@ export function validateBio(value: unknown): string | null {
  * later" possible — the thing most trackers are actually for.
  */
 export function validateRating(value: unknown): number {
+  // An absent rating is "not rated", not an error. `Number(null)` is 0 and
+  // `Number('')` is 0, so without this branch both would silently become a
+  // rating of 0 by accident rather than by decision — and `Number({})` is NaN,
+  // so an object would throw a message about "1 to 10" for what is really a
+  // shape error.
+  if (value === null || value === undefined || value === '') return 0;
+
   const rating = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(rating)) {
     throw new ValidationError('Pick a rating from 1 to 10.');

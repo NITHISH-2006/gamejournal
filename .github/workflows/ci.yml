@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel an in-flight run when the same branch is pushed again.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: lint, typecheck, test, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Placeholders, not real credentials.
+          #
+          # The build must not require a populated `.env.local`: `lib/env.ts`
+          # fails lazily rather than at import, so a missing variable only fails
+          # the code paths that actually need Supabase. Building with placeholders
+          # is what proves that property still holds — if someone reintroduces a
+          # module-scope throw, this step fails.
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_placeholder_key_for_ci_only
+          NEXT_PUBLIC_SITE_URL: https://example.com
+
+  security:
+    name: secret scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # An IGDB client secret was committed to this repository before `.env.local`
+      # was gitignored, and the history was rewritten to purge it. A guard is
+      # cheaper than trusting everyone to remember.
+      - name: Fail if a credential appears anywhere in the tree or history
+        run: |
+          if git grep -nE 'IGDB_CLIENT_SECRET=[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9]{16,}' \
+               -- . ':!*.example' ':!.github/workflows/*'; then
+            echo "::error::a credential is committed. Rotate it, then purge the history."
+            exit 1
+          fi
+          if git log -p --all | grep -nE 'IGDB_CLIENT_SECRET=[A-Za-z0-9]{16,}'; then
+            echo "::error::a credential appears in git history. Purge it with filter-repo."
+            exit 1
+          fi
+          echo "no credentials found"

@@ -452,6 +452,11 @@ begin
   raise notice 'granted execute on upsert_game to anon and authenticated';
 end $$;
 
+-- Orphaned by 002, which introduced `set_updated_at` and re-created every
+-- trigger to call it. `touch_updated_at` is no longer referenced by anything,
+-- so it is pure surface area. Idempotent.
+drop function if exists public.touch_updated_at();
+
 
 -- ===========================================================================
 -- 6. Trigger reconciliation
