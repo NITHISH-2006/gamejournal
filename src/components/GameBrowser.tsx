@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, useEffect, useCallback } from 'react';
+import { useState, useTransition, useEffect, useCallback, useRef } from 'react';
 import { Filter, Loader2, X, SlidersHorizontal } from 'lucide-react';
 import { browseGames, type BrowseHit, type BrowseSort } from '@/app/actions/browse';
 import { Button } from '@/components/ui/button';
@@ -81,17 +81,35 @@ export default function GameBrowser() {
   const [pending, startTransition] = useTransition();
 
   /*
-   * One effect, deferred a frame.
+   * Monotonic request id.
    *
-   * Reads the filter state out of the URL and kicks off the first query
-   * together. Deferred because the URL is only meaningful on the client, and a
-   * synchronous setState in an effect body is a cascading render (React 19 flags
-   * it explicitly). The previous version had two effects fighting over a `ready`
-   * flag, which could leave the browser unfiltered if the second one lost the
-   * race.
+   * Every query takes a ticket before it starts and checks it before it writes
+   * state. Without this, two filters changed in quick succession race: the
+   * *slower* response wins if it lands second, so the grid shows results for
+   * filters the user has already changed away from, while the controls read
+   * something else entirely. Stale responses are discarded.
+   *
+   * A ref, not state: it must be readable and writable inside an async callback
+   * without causing a render.
    */
+  const requestId = useRef(0);
+
+  /*
+   * Debounce for the controls that fire on every change event.
+   *
+   * The rating slider and the two number inputs call update on each event, so
+   * dragging the slider from 0 to 8 queues eight queries — each one a full
+   * aggregate over game_logs. Two of them are almost always in flight at once,
+   * which is what the request id above exists to clean up.
+   *
+   * Selects are excluded: they produce one event per deliberate choice, so
+   * delaying them would feel broken rather than responsive.
+   */
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const run = useCallback((next: State) => {
-    setError(null);
+    const ticket = ++requestId.current;
+
     startTransition(async () => {
       try {
         const result = await browseGames({
@@ -103,11 +121,20 @@ export default function GameBrowser() {
           sort: next.sort,
         });
 
+        // Superseded while in flight. Writing now would show stale results.
+        if (ticket !== requestId.current) return;
+
         setHits(result.hits);
         setTotal(result.total);
+        setError(null);
 
-        // Reflect the filters in the URL so the view is shareable and survives a
-        // refresh.
+        /*
+         * The URL is written only by the winning request.
+         *
+         * Writing it on every control change instead would mean the address bar
+         * could describe a query whose results are still in flight — and if that
+         * query then failed, the URL would claim a filter the grid does not show.
+         */
         const p = new URLSearchParams();
         if (next.status) p.set('status', next.status);
         if (next.minRating) p.set('minRating', String(next.minRating));
@@ -118,17 +145,26 @@ export default function GameBrowser() {
         const qs = p.toString();
         window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
       } catch (err) {
+        if (ticket !== requestId.current) return;
+
         setError((err as Error).message);
-        setHits([]);
+        /*
+         * The previous results are deliberately kept.
+         *
+         * `setHits([])` on failure told the user the filter matched nothing —
+         * a confident, specific, wrong claim. A network blip mid-filter made a
+         * populated library appear empty, and the empty state offered "clear all
+         * filters", so the natural next click made it worse. The error says what
+         * happened; the stale grid stays visible and is labelled as such.
+         */
       }
     });
   }, []);
 
-  /*
-   * One effect, deferred a frame.
+  /**
+   * Reads the filter state out of the URL and runs the first query together.
    *
-   * Reads the filter state out of the URL and kicks off the first query
-   * together. Deferred because the URL is only meaningful on the client, and a
+   * Deferred a frame because the URL is only meaningful on the client, and a
    * synchronous setState in an effect body is a cascading render (React 19 flags
    * it explicitly). An earlier version had two effects racing over a `ready`
    * flag, which could leave the browser unfiltered if the second lost the race.
@@ -142,13 +178,51 @@ export default function GameBrowser() {
     return () => cancelAnimationFrame(id);
   }, [run]);
 
-  function update(patch: Partial<State>) {
+  // Cancel a pending debounce on unmount so it cannot set state on a dead tree.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  /** Applies a change immediately. For selects and tag chips. */
+  function updateNow(patch: Partial<State>) {
     const next = { ...state, ...patch };
     setState(next);
+
+    // Cancel any queued debounced run so it cannot overwrite this one.
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+
     run(next);
   }
 
+  /**
+   * Coalesces rapid changes into one query. For sliders and number inputs.
+   *
+   * The control's own label updates immediately because `state` is set
+   * synchronously — only the query waits. So the slider tracks the pointer while
+   * the grid updates once, on release or after the user stops moving.
+   */
+  function updateDebounced(patch: Partial<State>) {
+    const next = { ...state, ...patch };
+    setState(next);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      run(next);
+    }, 300);
+  }
+
   function clear() {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
     setState(EMPTY);
     run(EMPTY);
   }
@@ -179,7 +253,7 @@ export default function GameBrowser() {
           <select
             id="browse-sort"
             value={state.sort}
-            onChange={(e) => update({ sort: e.target.value as BrowseSort })}
+            onChange={(e) => updateNow({ sort: e.target.value as BrowseSort })}
             disabled={pending}
             className="h-9 rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
           >
@@ -220,7 +294,7 @@ export default function GameBrowser() {
             <select
               id="filter-status"
               value={state.status}
-              onChange={(e) => update({ status: e.target.value })}
+              onChange={(e) => updateNow({ status: e.target.value })}
               disabled={pending}
               className="h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
             >
@@ -243,7 +317,7 @@ export default function GameBrowser() {
               max={10}
               step={1}
               value={state.minRating}
-              onChange={(e) => update({ minRating: Number(e.target.value) })}
+              onChange={(e) => updateDebounced({ minRating: Number(e.target.value) })}
               disabled={pending}
               className="w-full accent-[var(--brand)]"
             />
@@ -261,7 +335,7 @@ export default function GameBrowser() {
               placeholder="e.g. 2020"
               value={state.year ?? ''}
               onChange={(e) =>
-                update({ year: e.target.value ? Number(e.target.value) : null })
+                updateDebounced({ year: e.target.value ? Number(e.target.value) : null })
               }
               disabled={pending}
               className="h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
@@ -280,7 +354,7 @@ export default function GameBrowser() {
               placeholder="e.g. 5"
               value={state.minLogs || ''}
               onChange={(e) =>
-                update({ minLogs: e.target.value ? Number(e.target.value) : 0 })
+                updateDebounced({ minLogs: e.target.value ? Number(e.target.value) : 0 })
               }
               disabled={pending}
               className="h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
@@ -307,7 +381,7 @@ export default function GameBrowser() {
           </span>
           <button
             type="button"
-            onClick={() => update({ tag: null })}
+            onClick={() => updateNow({ tag: null })}
             className="underline underline-offset-2 hover:text-foreground"
           >
             clear
@@ -322,6 +396,17 @@ export default function GameBrowser() {
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
+          {/*
+            Only say the results are stale when there are results to be stale.
+            On a first load that failed there is nothing on screen, and
+            "showing previous results" would be describing a grid the user never
+            saw.
+          */}
+          {hits && hits.length > 0 && (
+            <span className="ml-1 text-ink-muted">
+              Still showing the previous results.
+            </span>
+          )}
         </p>
       )}
 
