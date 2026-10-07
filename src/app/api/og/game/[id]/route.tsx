@@ -1,6 +1,7 @@
 import { createPublicClient } from '@/lib/supabase';
 import { validateGameId } from '@/lib/validation';
 import { exactCount } from '@/lib/count';
+import { safeCoverUrl } from '@/lib/images';
 import { ImageResponse } from 'next/og';
 
 /**
@@ -74,10 +75,20 @@ export async function GET(
       ? String(game.release_date).slice(0, 4)
       : null;
 
-    const cover =
-      typeof game.cover_url === 'string' && game.cover_url.startsWith('https://')
-        ? game.cover_url
-        : null;
+    /*
+     * `safeCoverUrl`, not a bare `startsWith('https://')`.
+     *
+     * Satori fetches this URL server-side to embed it in the image, so any host
+     * in the column is fetched by the deployment — including a URL pointing at
+     * `169.254.169.254` or an internal hostname. This route is reachable with no
+     * authentication (it has to be, for link previews), so an attacker who can
+     * get a row written with a crafted `cover_url` gets a server-side request
+     * forged. `startsWith('https://')` permits any of them.
+     *
+     * The same helper backs `next/image`, so rows written before the write-side
+     * allow-list existed are rejected here too and fall back to the placeholder.
+     */
+    const cover = safeCoverUrl(game.cover_url);
 
     const stars =
       avg != null
