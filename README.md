@@ -1,438 +1,228 @@
 # GameJournal 🎮
 
-**A social platform for video game tracking, reviews, and discovery.**
+> **Letterboxd for video games.** Log what you play, rate it, review it, and see
+> what everyone else is playing.
 
-[Live site](https://gamejournal.vercel.app/) · Built with Next.js 16, React 19, Supabase and Tailwind CSS 4
-
----
-
-## The Vision
-
-GameJournal is a Letterboxd-style gaming journal. Log what you play, rate it out of
-ten, write a review, and see what your friends picked up this week. It is built to be
-used daily, not just demoed: every action is validated server-side, rate limited,
-and the UI degrades gracefully when the database is slow or a feature is
-unavailable.
+[![CI](https://github.com/NITHISH-2006/gamejournal/actions/workflows/ci.yml/badge.svg)](https://github.com/NITHISH-2006/gamejournal/actions)
+[![Live](https://img.shields.io/badge/live-gamejournal.vercel.app-violet)](https://gamejournal.vercel.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## Tech Stack
+## ⚠️ Read [`RUN-THIS-FIRST.md`](./RUN-THIS-FIRST.md) before anything else
 
-| Layer | Technology |
+Two things will not work until you do:
+
+1. **Rotate your IGDB client secret.** It was committed to this repository before
+   `.env.local` was gitignored. The history has been rewritten, but any secret
+   that was ever pushed must be treated as compromised.
+2. **Run three SQL migrations** in the Supabase SQL editor. The live database is
+   missing every RPC function, several foreign keys, and three tables, so
+   notifications, follower lists, stats and search cannot work without them.
+
+---
+
+## ✨ Features
+
+| Area | Feature | Status |
+|---|---|---|
+| **Auth** | Email + password | ✅ |
+| | Google and Discord OAuth | ✅ |
+| | Password reset *and* choosing a new password | ✅ |
+| | PKCE callback, hardened against open redirects | ✅ |
+| **Logging** | Status, 10-point rating, review, diary date, tags, playtime | ✅ |
+| | **Play sessions** — one row per sitting, with platform and note | ✅ |
+| | **Rating 0 = "logged but not rated"** | ✅ |
+| | Backlog with explicit queue order | ✅ |
+| | **CSV / Backlog XML / plain-list import** with a dry-run preview | ✅ |
+| **Social** | Global / Following / Trending feed | ✅ |
+| | Realtime feed updates | ✅ |
+| | Likes with optimistic UI | ✅ |
+| | Follow graph, follower and following lists | ✅ |
+| | Comment threads per log | ✅ |
+| | Notification bell (likes, follows, comments) | ✅ |
+| | **Content reporting** with a moderation queue | ✅ |
+| **Discovery** | Full-text review search with keyset pagination | ✅ |
+| | **Filterable browse** — status, rating, tag, year, log count, 4 sorts | ✅ |
+| | Leaderboard, trending, suggested players | ✅ |
+| **Your data** | Profile with stats, streaks and **year in review** | ✅ |
+| | **Contribution-style activity heatmap** | ✅ |
+| | Custom lists and a watchlist | ✅ |
+| **Platform** | Next.js 16, React 19, Tailwind v4 | ✅ |
+| | Supabase (Postgres + Auth + RLS) | ✅ |
+| | IGDB catalogue search | ✅ |
+| | OpenGraph cards per game and per log | ✅ |
+| | Sitemap, robots.txt, PWA manifest | ✅ |
+| | Nonce-based CSP, HSTS, strict cache policy | ✅ |
+| | **86 unit tests**, GitHub Actions CI | ✅ |
+
+---
+
+## 🏗️ Architecture
+
+```
+Browser
+  │
+  ├── Next.js App Router (src/app)
+  │     ├── Server Components   — default; read data directly
+  │     ├── 'use server'        — src/app/actions/*  (one file = one domain)
+  │     └── 'use client'        — only what genuinely needs state or effects
+  │
+  ├── src/proxy.ts              — security headers, CSP, session refresh
+  │                               (NOT middleware.ts: Next 16 resolves this
+  │                                convention beside app/, and a root-level
+  │                                middleware.ts is silently never executed)
+  │
+  └── Supabase (Postgres + Auth + Storage)
+
+src/lib/     — env, typed clients, validation, rate limiting, revalidation
+src/components/ — UI; ui-primitives.tsx holds the shared design-system pieces
+supabase/migrations/ — 001 base, 002 fixes, 003 hardening, 004 social/sessions
+src/tests/   — Vitest; no network, no database required
+```
+
+### Three Supabase clients, deliberately separate
+
+| Factory | Cookie scope | Used by |
+|---|---|---|
+| `createClient()` | bound to the request | Server Components and Actions |
+| `createBrowserSupabaseClient()` | browser | Client Components (memoised) |
+| `createPublicClient()` | **none** | sitemap, OG images, public stats |
+
+`createPublicClient` exists because `cookies()` from `next/headers` opts a route
+out of static generation. The sitemap lost its hourly revalidation for exactly
+that reason until a session-less client was introduced.
+
+All three are typed with `src/lib/database.types.ts`. See below for why that
+matters more than it looks.
+
+---
+
+## 🔐 Security notes
+
+**Typed Supabase clients.** Every client is constructed with a generated
+`Database` type. Without it, the client resolves to `SupabaseClient<any, …>`, so
+every `.select()` result is `any` and **a projection naming a column that does not
+exist type-checks perfectly**.
+
+That is not hypothetical. `follows` and `log_likes` were addressed by an `id`
+column they did not have; the read error was discarded, the toggle always took
+the insert branch, and **unfollow and un-like were impossible while every
+follower count on every profile rendered as 0**. It passed `tsc`, `eslint`,
+`next build` and every route check. It was then reintroduced by the fix meant to
+prevent it. Two audit passes were needed to catch it.
+
+`src/tests/counts-and-projections.test.ts` now asserts structurally that no code
+selects a bare `id` from those tables, and that every count goes through
+`exactCount` — which selects `'*'` and logs failures instead of coercing them to a
+confident `0`.
+
+**CSP.** A per-request nonce with `strict-dynamic`, so `'unsafe-inline'` is gone
+from `script-src`. `https://*.supabase.co` is deliberately *not* in `script-src`:
+it is never needed (the client is bundled from `'self'`), and a project's public
+Storage bucket is served from that same host, so anyone able to upload there could
+host JavaScript this policy would execute with the app's origin.
+
+**The proxy clones request headers.** Passing headers to `request.headers` is an
+**override, not a merge**: Next deletes every header not in the supplied set. An
+empty `Headers` therefore deleted `cookie`, `next-action`, `content-type` and
+`x-forwarded-for` on every request — breaking sign-in, every Server Action, and
+per-IP rate limiting, with no error pointing at the proxy.
+
+**Rate limiting.** Every write is limited, and the expensive reads are too.
+Per-user buckets for signed-in callers, per-IP for anonymous ones, keyed on the
+*rightmost* `X-Forwarded-For` — proxies append to that header, so the leftmost
+entry is client-controlled and rotating it defeated every limit in the app.
+
+---
+
+## 🗄️ Database
+
+Four migrations, all idempotent:
+
+| File | Adds |
 |---|---|
-| Framework | Next.js 16.2.6 (App Router, Turbopack, React 19.2) |
-| Styling | Tailwind CSS 4 with OKLCH tokens, `backdrop-filter` glass, custom neumorphic utilities |
-| Backend | Supabase — PostgreSQL, Auth, Realtime, Row Level Security |
-| Data fetching | Server Actions with React `cache()` request deduplication |
-| Game metadata | IGDB (Twitch) API, proxied server-side and cached in Postgres |
-| UI primitives | shadcn/ui on Radix, Lucide icons |
-| Social previews | `next/og` dynamic OG images on the Edge runtime |
-| Deployment | Vercel |
+| `001_init.sql` | Base schema, policies, RPCs |
+| `002_fixes_and_features.sql` | Notification RLS, surrogate keys on the join tables, `anon` grants, missing FKs, the full-text search RPC, stats functions |
+| `003_verify_and_harden.sql` | A **PREFLIGHT report** and a **PASS/FAIL health grid**, the gaps 002 leaves on a database older than 001, `get_suggested_users`, trigram and pagination indexes |
+| `004_social_and_sessions.sql` | `reports`, `play_sessions`, `backlog_position`, the activity heatmap |
+
+Regenerate the types after applying them:
+
+```bash
+npx supabase gen types typescript --project-id <ref> > src/lib/database.types.ts
+```
 
 ---
 
-## Quick Start
+## 🧪 Development
 
 ```bash
-git clone https://github.com/NITHISH-2006/gamejournal.git
-cd gamejournal
 npm install
-cp .env.example .env.local   # then fill in the values
+cp .env.example .env.local     # fill in Supabase; IGDB optional
+npm run dev
 ```
 
-### 1. Environment
+| Script | Does |
+|---|---|
+| `npm run dev` | Dev server |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint |
+| `npm run type-check` | `tsc --noEmit` |
+| `npm run test` | Vitest |
+| `npm run test:coverage` | Vitest with V8 coverage |
+| **`npm run verify`** | **lint + typecheck + test + build** — what CI runs |
 
-```bash
-# .env.local
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-IGDB_CLIENT_ID=your-igdb-client-id      # optional
-IGDB_CLIENT_SECRET=your-igdb-client-secret  # optional
-NEXT_PUBLIC_SITE_URL=https://your-domain.com
-```
+### Tests need no database and no network
 
-Both Supabase variables are required — the app fails fast with a clear message if
-they are missing, rather than erroring deep inside the SDK. The check runs when a
-client is created, not at import time, so `next build` still succeeds without them.
-The IGDB pair is optional: without it, game search falls back to the local `games`
-cache and the UI explains that search is unavailable.
+`src/tests/setup.ts` stubs `process.env`, `next/cache` and `next/headers`, so a
+test can assert real behaviour without a Supabase project. The suite is aimed at
+the failure modes that actually bit this project — silent wrong answers rather
+than crashes:
 
-### 2. Database
-
-> **Read this before assuming a migration will upgrade an existing database.**
-> An earlier version of this README claimed `001_init.sql` was idempotent and
-> "also upgrades an existing database in place". **That is false, and acting on it
-> is what caused most of the problems documented in `AUDIT_REDESIGN_REPORT.md`.**
->
-> `001_init.sql` creates every table with `create table if not exists`. On a table
-> that already exists that statement is a **complete no-op** — it cannot add a
-> column, cannot add a foreign key, cannot change a policy. So re-running it
-> against an existing database reports success and changes nothing, and the
-> resulting drift is completely invisible. A project created from an earlier
-> revision of `001` is missing columns, foreign keys, functions and RLS policies
-> that the current `001` text appears to promise.
-
-For a **fresh** database, run both, in order:
-
-```
-supabase/migrations/001_init.sql             # schema, RLS, base functions
-supabase/migrations/002_fixes_and_features.sql  # columns, FKs, 9 RPCs, policies, triggers
-```
-
-For an **existing** database, run **`002_fixes_and_features.sql` on its own.**
-
-`002` is self-sufficient and does not need `001` re-run. Every change in it is an
-explicit `alter table … add column if not exists`, a guarded `add constraint`, or a
-`create or replace function`, so it is genuinely idempotent and safe to re-run.
-It adds:
-
-- **Columns** — `game_logs.playtime_hours`, `is_favorite`, `has_spoilers`,
-  `updated_at`; `lists.kind`, `updated_at`; `notifications.game_id`;
-  `comments` table; surrogate `id` on `follows` and `log_likes` (backfilled)
-- **Foreign keys** — including `game_logs.user_id → profiles.id`, without which
-  PostgREST cannot embed a log's author and every game page loses its
-  "Community logs" section
-- **All 9 RPCs** — `get_game_stats`, `get_log_likes`, `get_top_rated_games`,
-  `get_trending_games`, `get_user_activity_stats`, `get_user_log_history`,
-  `get_year_in_review`, `search_logs`, `upsert_game`
-- **RLS corrections** — most importantly the notification insert policy, which
-  compared the caller to the *recipient* and therefore rejected 100% of inserts
-- **Grants** — `select` on `lists` for `anon`, so public lists stop 404ing for
-  signed-out visitors; and `revoke insert/update/delete on games`, routing writes
-  through a `SECURITY DEFINER` `upsert_game`
-- **The `handle_new_user` signup trigger**, which lowercases usernames correctly
-  (the earlier version *stripped* capitals, so `Alice` became `lice`)
-
-`supabase/seed.sql` optionally inserts a few games for local development.
-
-> **The app works on both sides of the migration.** Every query that touches a
-> 002-only column or RPC tries progressively simpler projections and uses the
-> first one the database accepts, so the feed, game pages, notifications and
-> leaderboards all render before `002` is applied. The one feature with no
-> fallback is **notification inserts**, because the RLS rejection is server-side
-> and cannot be worked around from the client. See `RUN-THIS-FIRST.md`.
-
-### 2a. Supabase Auth configuration
-
-Two project settings in the Supabase dashboard affect sign-in and are not visible
-from the code:
-
-- **Site URL** — used as the fallback redirect target when `emailRedirectTo` is
-  not supplied. The app now always supplies it, pointing at
-  `<origin>/auth/callback`, but the setting should still match your deployment.
-- **Redirect URLs** — add both `http://localhost:3000/auth/callback` and your
-  production `/auth/callback`, or confirmation links will be rejected.
-
-Confirmation and recovery links arrive as `/auth/callback?code=…` (PKCE) and are
-exchanged for a session by `src/app/auth/callback/route.ts`. That route is
-required — without it nobody who has to confirm their email address can finish
-signing in.
-
-### 3. Run
-
-```bash
-npm run dev     # http://localhost:3000
-npm run build   # production build
-npm start       # serve the build
-npm run lint    # eslint
-```
+- **counts and projections** — the unfollow bug's root cause, asserted structurally
+- **migrations ↔ types** — catches a function that exists in SQL but not in the
+  types, which produces a call TypeScript accepts and PostgREST rejects
+- **rate limit** — rightmost-IP extraction, and that a saturated store stays fast
+- **validation** — rating 0, over-long usernames rejected rather than truncated,
+  LIKE-metacharacter escaping
+- **import parsing** — quoted CSV fields, XML entities, three rating conventions,
+  and dates (this caught a live bug where `toISOString()` shifted every imported
+  date back a day outside UTC)
 
 ---
 
-## Features
+## 🎨 Design notes
 
-### Logging
-- IGDB-backed search with debouncing, keyboard navigation and race-safe responses
-- Status: Playing, Completed, Backlog, Abandoned
-- 10-point star rating, optional review, tags, diary date
-- Playtime hours, favourites, spoiler flags (migration-gated)
-- **One entry per game** — re-logging updates in place instead of duplicating
+The visual language is glassmorphism and neumorphism, split by what each is
+actually good at, because a practitioner survey found both fail in production for
+the same reason: **contrast, not taste**.
 
-### Comments
-- Per-log threads, nested replies
-- Optimistic insert via `useOptimistic`, so a comment appears immediately and
-  reconciles rather than flickering
-- Batched author resolution — one query for all authors across all visible logs
-  instead of one per log
-- Edit and delete your own; replies quote the parent
+| Style | Where | Guarantee |
+|---|---|---|
+| Neumorphism | interactive controls only | always paired with a hairline border, so the edge survives a display that cannot render the shadow |
+| Glass | elevated content surfaces | blur always over a 72%-opaque scrim, never a bare translucent fill |
+| Solid | anything that must stay readable | applied automatically under `forced-colors` |
 
-### Stats
-- Activity streaks (current and longest)
-- Year in review: games completed, hours played, top genres, average rating
-- Per-status breakdown and a log-history sparkline on the profile
-- Backed by `get_user_activity_stats` / `get_year_in_review`, with working
-  JavaScript equivalents so the panel renders before the migration
+All four accessibility media queries are handled: `prefers-reduced-motion`,
+`prefers-reduced-transparency`, `prefers-contrast: more`, and `forced-colors`.
 
-### Social
-- Activity feed with **Global**, **Following** and **Trending** views
-- Cursor pagination with "Load more" — server-rendered first page, so the feed is
-  in the initial HTML rather than fetched after hydration
-- Supabase Realtime: new posts appear without a refresh
-- Follow/unfollow with live follower counts, plus a followers/following list
-- Notifications for likes, follows and comments, with a Realtime subscription
-- Player search, suggested accounts, and a ⌘K command palette
-
-### Discovery
-- Top-rated leaderboard using IMDb-style confidence shrinkage, so one 10/10 rating
-  cannot top a well-reviewed game
-- Trending games for the last 7 days
-- **Full-text review search** across every public review, with keyset pagination
-- Player search with bios
-
-### Library
-- Public profiles with cover wall, stats, public lists and recent logs
-- Custom lists with public/private visibility, rename and delete
-- Auto-managed "Plan to Play" watchlist
-- Edit and delete any of your own logs
-
-### Reliability
-- Every write action validates input server-side
-- Rate limiting on all mutations and on the outbound IGDB calls
-- Authoritative toggle actions return final state, so the UI cannot drift
-- `error.tsx`, `not-found.tsx`, a loading state on `/discover`, and error
-  boundaries around each independently-fetching island
-- Security headers, a production Content-Security-Policy, and Supabase session
-  refresh in `src/proxy.ts`
-- Graceful degradation: missing RPCs, missing columns, missing foreign keys and
-  missing IGDB credentials all fall back instead of throwing — see §5 of the
-  design notes below for how that is structured
-
-> **No test framework.** The route-status and header checks in this repo were run
-> with `curl` against a running server. That is not a substitute for regression
-> tests, and it has already cost time: a fix that undid an earlier fix passed
-> `tsc`, `eslint`, `next build` and every route check. See the closing note in
-> `AUDIT_REDESIGN_REPORT.md`.
+Text uses a measured contrast ramp — `--ink` 16.3:1, `--ink-muted` 11.9:1,
+`--ink-faint` 5.6:1 — because opacity modifiers on text were the single largest
+source of sub-4.5:1 copy in the previous version.
 
 ---
 
-## Design System
+## 📄 Further reading
 
-The UI blends **glassmorphism** and **neumorphism** over a dark, animated gradient
-field:
-
-- `globals.css` defines the token layer, the surface ladder, and the shadow recipe
-  (light source top-left) shared by every component.
-- **Glass** (`glass`, `glass-strong`, `glass-subtle`) — translucent, blurred,
-  layered, with a 1px inner highlight for depth.
-- **Neumorphism** (`neu-raised`, `neu-inset`, `neu-button`) — soft extrusions that
-  read as carved from the surface. Buttons physically press inward on `:active`.
-- **Ambient** — three slow-drifting colour orbs plus an SVG grain layer that stops
-  the large gradients from banding.
-- `prefers-reduced-motion` is honoured globally.
-
-Utility classes live in `src/app/globals.css`; the reusable pieces are in
-`src/components/ui-primitives.tsx`, `StarRating.tsx`, `Skeleton.tsx` and
-`EmptyState.tsx`.
+| Document | What it records |
+|---|---|
+| [`RUN-THIS-FIRST.md`](./RUN-THIS-FIRST.md) | The migration runbook and a 10-step verification order |
+| [`AUDIT_REDESIGN_REPORT.md`](./AUDIT_REDESIGN_REPORT.md) | The full audit: every bug, its cause, and why it was invisible |
+| [`SESSION_NOTES.md`](./SESSION_NOTES.md) | The proxy header bug, and why a fix can hide a second bug in the same file |
 
 ---
 
-## Project Structure
+## 📝 License
 
-```
-src/
-├── app/
-│   ├── page.tsx                  # Feed + hero (first page fetched on the server)
-│   ├── layout.tsx                # Fonts, metadata, ambient background
-│   ├── globals.css               # Design system
-│   ├── error.tsx  not-found.tsx  # Route-level boundaries
-│   ├── auth/
-│   │   ├── callback/route.ts     # PKCE exchange — REQUIRED for email sign-in
-│   │   └── error/page.tsx        # Friendly failed-callback destination
-│   ├── discover/                 # Leaderboards + player search + review search
-│   ├── game/[id]/                # Game detail, community logs
-│   ├── user/[username]/          # Public profile
-│   ├── list/[id]/                # List detail
-│   ├── profile/                  # Own library
-│   ├── sitemap.ts  robots.ts
-│   ├── actions/                  # Server Actions (one module per domain)
-│   └── api/og/{game,log}/[id]/   # Dynamic OG cards
-├── components/
-│   ├── ui/                       # shadcn primitives, restyled
-│   ├── ui-primitives.tsx         # GameCover, ProfileAvatar, StatusPill, StatTile
-│   ├── Navbar  MobileNav  CommandPalette  Ambient
-│   ├── ActivityFeed  LogGameModal  LogActions  LogGameButton
-│   ├── AuthButton  NotificationBell  FollowButton  LikeButton  FollowList
-│   ├── CommentThread  StatsPanel  ReviewSearch  SuggestedUsers
-│   └── …
-└── lib/
-    ├── supabase.ts               # Server/browser/public clients, self-healing profile
-    ├── env.ts                    # Lazy config; NEXT_PUBLIC_* must stay literal
-    ├── validation.ts             # Input validation + limits
-    ├── images.ts                 # Image URL allow-list (host AND pathname)
-    ├── count.ts                  # Row counting that survives a missing column
-    ├── notify.ts                 # Fire-and-forget notifier (no 'use server')
-    ├── schema-notice.ts          # One-per-process logging for degraded paths
-    ├── rate-limit.ts  limiter.ts
-    ├── capabilities.ts           # Optional-column detection
-    ├── revalidate.ts             # Shared cache invalidation
-    ├── date.ts                   # Timezone-stable formatting
-    └── types.ts
-src/proxy.ts                      # Security headers, cache policy, session refresh
-supabase/
-├── migrations/001_init.sql       # Base schema, RLS, base functions
-├── migrations/002_fixes_and_features.sql  # Self-sufficient upgrade — run this
-└── seed.sql
-```
-
----
-
-## Notable Engineering Decisions
-
-### Constraints worth knowing before you edit
-
-**`'use server'` registers every export as a public endpoint.** There is no way
-to opt a single export out, and every one must be `async`. This is why
-`createNotification` lives in `src/lib/notify.ts` and `announceDegraded` in
-`src/lib/schema-notice.ts` — both are plain internal helpers that would otherwise
-have become callable endpoints. A notification action whose recipient is a
-parameter is a spam primitive; RLS cannot save you, because the insert policy
-keys on the *actor*, which the caller controls.
-
-**Request headers passed to `NextResponse.next()` are an override, not a
-merge.** Next collects the keys you supply and then deletes every request header
-*not* in that list. Cloning first is mandatory:
-
-```ts
-const headers = new Headers(request.headers);  // clone
-headers.set('x-something', 'value');
-NextResponse.next({ request: { headers } });
-```
-
-Passing an empty `Headers()` deletes `cookie`, `next-action`, `content-type` and
-`x-forwarded-for` on every request — which silently breaks sign-in, every Server
-Action, and per-IP rate limiting. This happened here; see
-`AUDIT_REDESIGN_REPORT.md` §13.
-
-**`head: true` counts still validate the projection.** `select('id', { count,
-head: true })` fails with `42703` if that column does not exist, and PostgREST
-reports it with an *empty* message. `follows` and `log_likes` are keyed on
-composite primary keys and have no `id`. Always use `exactCount` from
-`src/lib/count.ts`, which selects `'*'`.
-
-**A missing column or an unresolvable embed fails the whole PostgREST request,
-not just that field.** That is why the feed and game pages try a *sequence* of
-projections and use the first one the database accepts, rather than one query
-with a try/catch. The ladder is in `src/app/actions/feed.ts`
-(`runLogQuery`) and `src/app/actions/discover.ts` (`getGameLogs`).
-
-**Degraded paths log once per process, not once per request.** The fallback
-mechanism used to emit three `console.error` lines on every home page render,
-which is exactly why the real errors in the log had become impossible to find.
-Those failures are the mechanism, not incidents. A genuine failure — every
-projection rejected — does log an error. See `src/lib/schema-notice.ts`.
-
-### Correctness decisions
-
-**Aggregates live in SQL.** The original Discover page selected the 100
-highest-rated rows and averaged them in JavaScript, which structurally excluded
-any game ranked below 100. Ranking now runs through `get_top_rated_games()`.
-
-**The leaderboard uses confidence shrinkage, not a minimum-log floor.** An
-IMDb-style `score = (avg*n + 4.0*3) / (n+3)` was chosen because a hard `minLogs`
-floor solved gaming on a large site but emptied the board entirely on a small
-one — with 8 logs in the whole database, nothing can reach a floor of 5, so the
-primary discovery surface rendered permanently empty.
-
-**Feed identity comes from the session.** The original `getFeedData` trusted a
-client-supplied `currentUserId`, so a forged value returned another user's
-following feed. `getSuggestedUsers` had the same shape and was a follow-graph
-oracle over arbitrary accounts. Both now resolve the caller from the session.
-
-**The feed's first page is fetched on the server.** It used to start empty and
-call a Server Action from a `useEffect`, which made the app's main content surface
-100% client-rendered: crawlers, no-JS visitors and the initial HTML all saw an
-empty skeleton. `src/app/page.tsx` now fetches it and hands it to
-`<ActivityFeed initialLogs … />`. Actions are still used for tab switches and
-pagination, which are genuine user interactions.
-
-**Follow and like toggles delete by composite key.** `.eq('follower_id').eq
-('following_id')` rather than a surrogate `id`, so they work whether or not
-`002`'s backfill has been applied. The matching existence check uses
-`select('*')` — naming `id` there silently reintroduced the exact bug this
-avoids, and passed every static check.
-
-**Toggles are single actions returning authoritative state.** Separate
-`like`/`unlike` actions could desynchronise the button from the database;
-`toggleLike` and `toggleFollow` return final state and the UI reverts on failure.
-`followUser`/`unfollowUser` and `likeLog`/`unlikeLog` exist for callers that want
-idempotent behaviour, and are delete-only or insert-only respectively.
-
-**Client search is debounced and race-guarded.** The original fired a Server
-Action on every keystroke, draining the IGDB quota and producing out-of-order
-results.
-
-**Dates are formatted in UTC.** Server Components render in the server's timezone,
-so `date-fns` formatting produced hydration mismatches and off-by-one-day labels.
-`src/lib/date.ts` formats on a pinned UTC calendar.
-
-**The Supabase browser client is memoised — and its type is inferred, not
-annotated.** It was constructed on every render of every component that needed
-it. Annotating the cache as `ReturnType<typeof createBrowserClient>` collapses
-the generic: `createBrowserClient` is generic, so `ReturnType<...>` resolves its
-generics to their constraints, `SupabaseClient` collapses, and
-`auth.onAuthStateChange` takes an untyped callback. The same class of error had
-already been fixed for `createPublicClient` by factoring the construction into a
-named factory and memoising on that.
-
-**Image URLs are allow-listed on host *and* pathname.** `next.config.ts`
-configures `remotePatterns` with both, and a host-only check lets
-`https://images.igdb.com/anything` through to `next/image`, which throws at
-render time — a permanent 500 for every page showing that game. Enforced on both
-the write side (`safeCoverUrl`) and the render side (`GameCover`), because the
-render side is the only one that covers rows already in the database.
-
-**`proxy.ts` lives in `src/`, not the repo root.** Next.js resolves the proxy
-convention relative to the `app` directory, so with `src/app` the file must be
-`src/proxy.ts`. A root-level `proxy.ts` builds without complaint and simply never
-runs — the only headers that appeared on responses came from the two in
-`next.config.ts`, so the CSP, HSTS, `Referrer-Policy` and the
-`Cache-Control: private, no-store` rule on `/game`, `/user`, `/list` and
-`/profile` were all silently dead. Next.js 16 deprecated `middleware` in favour of
-`proxy`; `npx @next/codemod@canary middleware-to-proxy .` performs the rename, but
-move the result into `src/` afterwards.
-
-**`loading.tsx` is deliberately absent from the dynamic routes.** A
-`loading.tsx` (or any `Suspense` boundary above a `notFound()` call) makes the
-shell stream immediately, which commits the response to HTTP 200 before the page
-component can call `notFound()`. `/game/[id]`, `/user/[username]` and
-`/list/[id]` would then serve their not-found body with a 200 status — a soft 404
-that search engines index as real content. Measured, then reverted. Correct
-status codes are worth more here than a skeleton, so only `/discover`, which can
-never 404, has one.
-
-**Env validation is lazy, not at module scope.** `src/lib/env.ts` throws only
-when Supabase credentials are actually used (`getSupabaseConfig()`), not when the
-module is imported. Throwing on import meant `next build` could not collect page
-data for routes that never touch the database, so a build without a populated
-`.env.local` failed outright. `sitemap.xml` additionally returns just its static
-routes when no credentials are configured.
-
-**`NEXT_PUBLIC_*` must be read as literal `process.env.NEXT_PUBLIC_FOO`.** Next
-inlines these by literal substitution and can only do so when the expression is
-statically analysable. A helper taking `process.env[name]` compiles fine, works
-on the server, and never reaches the browser — the worst failure mode, since
-every route returns 200 and the app only explodes on hydration with an error
-pointing at a file that plainly does have the variable. **Clear `.next` and
-hard-reload after any `.env.local` change.**
-
-**Session refresh happens in the proxy, not in a Server Component.** A Server
-Component cannot set cookies, so `setAll` in `lib/supabase.ts` silently drops
-refreshed tokens. `src/proxy.ts` creates a `createServerClient` and calls
-`getUser()`, which validates the JWT against Supabase rather than trusting the
-cookie and triggers a refresh when the access token expires. Without it,
-sessions die at the ~1 hour access-token lifetime.
-
-**Keyset cursors must carry every column in the `ORDER BY`.** The feed ordered by
-`(created_at DESC, id DESC)` but paged on `created_at` alone, so any row sharing
-the boundary row's timestamp was sorted strictly after it yet failed
-`created_at < cursor` — and appeared on no page, with no gap reported.
-`created_at` defaults to `now()`, which in Postgres is the *transaction*
-timestamp, so ties are routine. Timestamps are normalised with `toISOString()`
-before entering a cursor because PostgREST returns `+00:00` and a raw `+` in a
-query string decodes to a space.
-
----
-
-## License
-
-MIT · Built by Nithish C.
+MIT — see [LICENSE](./LICENSE).
