@@ -73,7 +73,13 @@ export default function LikeButton({
       onClick={handleToggle}
       disabled={pending}
       aria-pressed={liked}
-      aria-label={liked ? 'Unlike this log' : 'Like this log'}
+      // The count is folded into the label. A visible "12" next to an
+      // `aria-label` of "Like this log" means a screen-reader user can never hear
+      // that the post has 12 likes — the number on screen is the interesting part
+      // and it was the part being discarded.
+      aria-label={`${
+        liked ? 'Unlike this log' : 'Like this log'
+      }. ${count} ${count === 1 ? 'like' : 'likes'}.`}
       title={liked ? 'Unlike' : 'Like'}
       className={cn(
         'group inline-flex items-center gap-1.5 rounded-full px-2 py-1 transition-all duration-200',

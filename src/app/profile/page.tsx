@@ -216,7 +216,6 @@ export default async function ProfilePage() {
             icon={Bookmark}
             title="No lists yet"
             description="Group games into collections like best-of lists or a plan to play."
-            actionLabel="Create a list"
           />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

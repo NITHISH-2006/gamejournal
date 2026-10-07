@@ -30,7 +30,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { GameCover } from '@/components/ui-primitives';
-import { StarInput } from '@/components/StarRating';
+import { StarInput } from '@/components/StarInput';
 import { LOG_STATUSES, STATUS_META, type Game, type LogStatus } from '@/lib/types';
 import { localDateString } from '@/lib/validation';
 import { cn } from '@/lib/utils';

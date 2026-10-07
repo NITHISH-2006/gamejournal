@@ -30,20 +30,26 @@ export function useToast() {
   return useContext(ToastContext);
 }
 
+/**
+ * Toast tones.
+ *
+ * Uses the design tokens rather than a hard-coded Tailwind palette. The previous
+ * values pinned `text-emerald-100`, `text-rose-100` and `text-zinc-100` plus
+ * literal `rgba()` shadows, so the three toasts could not respond to a theme
+ * change and had to be edited by hand whenever one was made — which is how a
+ * low-contrast surface survives a contrast audit.
+ */
 const TONES: Record<ToastType, { className: string; Icon: typeof CheckCircle2 }> = {
   success: {
-    className:
-      'border-emerald-400/25 bg-emerald-500/12 text-emerald-100 shadow-[0_8px_30px_-8px_rgba(16,185,129,0.4)]',
+    className: 'border-success/25 bg-success/12 text-ink',
     Icon: CheckCircle2,
   },
   error: {
-    className:
-      'border-rose-400/25 bg-rose-500/12 text-rose-100 shadow-[0_8px_30px_-8px_rgba(244,63,94,0.4)]',
+    className: 'border-destructive/25 bg-destructive/12 text-ink',
     Icon: XCircle,
   },
   info: {
-    className:
-      'border-white/12 bg-white/8 text-zinc-100 shadow-[0_8px_30px_-8px_rgba(0,0,0,0.5)]',
+    className: 'border-white/12 bg-white/8 text-ink',
     Icon: Info,
   },
 };

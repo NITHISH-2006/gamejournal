@@ -74,32 +74,6 @@ export function EmptyState({
   );
 }
 
-/** Inline notice used for non-fatal errors. */
-export function InlineAlert({
-  title,
-  description,
-  className,
-}: {
-  title: string;
-  description?: string;
-  className?: string;
-}) {
-  return (
-    <div
-      role="alert"
-      className={cn(
-        'rounded-2xl border border-amber-500/25 bg-amber-500/8 px-4 py-3',
-        className
-      )}
-    >
-      <p className="text-sm font-medium text-amber-200">{title}</p>
-      {description && (
-        <p className="mt-0.5 text-sm text-amber-200/70">{description}</p>
-      )}
-    </div>
-  );
-}
-
 /** Page-level section heading. */
 export function SectionHeader({
   title,

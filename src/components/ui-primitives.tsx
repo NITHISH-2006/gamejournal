@@ -187,7 +187,18 @@ export function SegmentedControl<T extends string>({
 }) {
   return (
     <div
-      role="tablist"
+      /*
+       * `radiogroup`, not `tablist`.
+       *
+       * These options filter the content below them; they do not switch panels,
+       * and there is no `tabpanel` anywhere in this application. `role="tab"`
+       * requires arrow-key navigation within the tablist and an associated
+       * `tabpanel` via `aria-controls`; neither existed, so assistive technology
+       * announced "tab" for what is really a filter toggle and the association
+       * dangled. A radiogroup is the correct pattern and gets arrow-key
+       * navigation and `aria-checked` for free from the platform convention.
+       */
+      role="radiogroup"
       className={cn(
         'neu-inset inline-flex items-center gap-1 rounded-2xl p-1',
         className
@@ -198,8 +209,9 @@ export function SegmentedControl<T extends string>({
         return (
           <button
             key={opt.value}
-            role="tab"
-            aria-selected={active}
+            type="button"
+            role="radio"
+            aria-checked={active}
             onClick={() => onChange(opt.value)}
             className={cn(
               'inline-flex items-center gap-1.5 rounded-xl font-medium transition-all duration-200',
@@ -248,7 +260,7 @@ export function ReviewText({
 }) {
   return (
     <p
-      className={cn('text-sm leading-relaxed whitespace-pre-wrap text-zinc-300', className)}
+      className={cn('text-sm leading-relaxed whitespace-pre-wrap text-ink-muted', className)}
     >
       {hasSpoilers ? (
         <details className="group">

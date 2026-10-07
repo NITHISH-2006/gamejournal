@@ -1,7 +1,14 @@
 import { cn } from '@/lib/utils';
-
-/** Star rating display and input. */
 import { Star } from 'lucide-react';
+
+/**
+ * Read-only star rating.
+ *
+ * Deliberately a Server Component: ratings are rendered on the feed, on every
+ * game page and on every profile, and none of those surfaces should ship
+ * JavaScript just to draw five stars. The interactive picker lives in
+ * `StarInput.tsx`, which is a Client Component.
+ */
 
 type RatingProps = {
   value: number;
@@ -70,94 +77,14 @@ export function StarRating({
   );
 }
 
-type StarInputProps = {
+/**
+ * Props for the interactive picker. Declared here, consumed by
+ * `StarInput.tsx`, so the display component stays free of client hooks.
+ */
+export type StarInputProps = {
   value: number;
   onChange: (value: number) => void;
   max?: number;
   className?: string;
   disabled?: boolean;
 };
-
-/** Interactive 10-point star picker with keyboard support. */
-export function StarInput({
-  value,
-  onChange,
-  max = 10,
-  className,
-  disabled,
-}: StarInputProps) {
-  const items = Array.from({ length: max }, (_, i) => i + 1);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (disabled) return;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      onChange(Math.min(max, value + 1));
-    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      onChange(Math.max(1, value - 1));
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      onChange(1);
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      onChange(max);
-    } else if (/^[0-9]$/.test(e.key)) {
-      const n = Number(e.key);
-      if (n >= 1 && n <= max) {
-        e.preventDefault();
-        onChange(n);
-      }
-    }
-  };
-
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Rating out of 10"
-      tabIndex={disabled ? -1 : 0}
-      onKeyDown={handleKeyDown}
-      className={cn(
-        'inline-flex items-center gap-1 rounded-xl p-1 outline-none',
-        'focus-visible:ring-2 focus-visible:ring-brand/50',
-        disabled && 'pointer-events-none opacity-50',
-        className
-      )}
-    >
-      {items.map((n) => {
-        const active = n <= value;
-        return (
-          <button
-            key={n}
-            type="button"
-            role="radio"
-            aria-checked={value === n}
-            aria-label={`${n} of ${max}`}
-            disabled={disabled}
-            // Roving tabindex: only the currently-selected star is in the tab
-            // order. Every star used to be focusable *and* wired to
-            // `onFocus={() => onChange(n)}`, so tabbing through the log form
-            // fired onChange(1), onChange(2) … onChange(10) — silently
-            // overwriting the default rating of 8 before the user touched
-            // anything. A radiogroup is required to have exactly one tab stop.
-            tabIndex={value === n ? 0 : -1}
-            // `onMouseEnter` sets the value, `onClick` commits it so keyboard
-            // users are not forced through hover states.
-            onMouseEnter={() => onChange(n)}
-            onClick={() => onChange(n)}
-            className="rounded-md p-0.5 transition-transform duration-150 hover:scale-115 focus-visible:outline-none"
-          >
-            <Star
-              className={cn(
-                'size-6 transition-colors duration-150',
-                active
-                  ? 'fill-amber-400 text-amber-400'
-                  : 'text-white/15 hover:text-white/35'
-              )}
-            />
-          </button>
-        );
-      })}
-    </div>
-  );
-}

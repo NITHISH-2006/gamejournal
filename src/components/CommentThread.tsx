@@ -22,7 +22,7 @@ type NewComment = Comment & { optimistic?: boolean };
  * Posting is optimistic: the new comment appears immediately and is reconciled
  * from the server response. `useOptimistic` keeps the pending row in the list
  * across the transition without a second source of truth, which is what the
- * previous manual `setComments` approach kept getting wrong on failure — the
+ * previous manual `setComments` approach kept getting wrong on failure â€” the
  * optimistic row was left behind when the action rejected.
  */
 export default function CommentThread({
@@ -123,7 +123,7 @@ export default function CommentThread({
                     {formatDate(c.created_at)}
                   </span>
                 </div>
-                <p className="mt-0.5 text-sm whitespace-pre-wrap text-zinc-300">
+                <p className="mt-0.5 text-sm whitespace-pre-wrap text-ink-muted">
                   {c.body}
                 </p>
               </div>

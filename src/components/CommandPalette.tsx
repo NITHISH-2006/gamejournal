@@ -14,6 +14,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { searchProfiles } from '@/app/actions/profiles';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { ProfileAvatar } from '@/components/ui-primitives';
 import { cn } from '@/lib/utils';
 
@@ -31,7 +32,7 @@ type Result = UserResult | ActionResult;
 /**
  * Anything the palette can select. Both static actions and user hits are
  * normalised into this so rendering and keyboard navigation read the same
- * array — see the note on `items` below.
+ * array â€” see the note on `items` below.
  */
 type PaletteItem =
   | { kind: 'action'; id: string; label: string; href: string }
@@ -145,7 +146,7 @@ export default function CommandPalette() {
    * The previous version kept `staticActions` and user hits in two separate
    * branches while `onKeyDown` only ever read `results`. With an empty query
    * `results` is `[]`, so `ArrowDown` computed `Math.min(1, -1) === -1` and
-   * `Enter` did nothing — the palette's core value proposition, jumping to a
+   * `Enter` did nothing â€” the palette's core value proposition, jumping to a
    * page without a mouse, was broken. Rendering and keyboard navigation now
    * both derive from this single array, so they cannot disagree.
    *
@@ -209,116 +210,124 @@ export default function CommandPalette() {
         <Search className="size-4.5" />
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-[120] flex items-start justify-center p-4 pt-[12vh]">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-md"
-            onClick={() => setOpen(false)}
-            aria-hidden="true"
-          />
-
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Command palette"
-            className="glass-strong relative w-full max-w-lg overflow-hidden rounded-2xl animate-rise"
-          >
-            <div className="flex items-center gap-3 border-b border-white/8 px-4">
-              {searching ? (
-                <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-              ) : (
-                <Search className="size-4 shrink-0 text-muted-foreground" />
-              )}
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={onKeyDown}
-                placeholder="Search games, users, or jump to a page..."
-                className="h-14 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                aria-label="Search"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <kbd className="hidden shrink-0 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[0.6rem] text-muted-foreground sm:block">
-                ESC
-              </kbd>
-            </div>
-
-            {/* Live region: results resolve asynchronously and a screen-reader
-                user previously got no signal that the search had finished. */}
-            <ul
-              ref={listRef}
-              role="listbox"
-              aria-label="Commands and players"
-              className="max-h-80 overflow-y-auto p-2"
-            >
-              {items.length === 0 && query.trim().length >= 2 && !searching && (
-                <li
-                  role="status"
-                  aria-live="polite"
-                  className="px-3 py-8 text-center text-sm text-muted-foreground"
-                >
-                  No results for {query.trim()}
-                </li>
-              )}
-
-              {items.map((item, i) => (
-                <li
-                  key={`${item.kind}-${item.id}`}
-                  role="option"
-                  aria-selected={i === activeIndex}
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      item.kind === 'user' ? go(`/user/${item.username}`) : go(item.href)
-                    }
-                    onMouseEnter={() => setActiveIndex(i)}
-                    className={cn(
-                      'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors',
-                      i === activeIndex
-                        ? 'bg-white/8 text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    {item.kind === 'action' ? (
-                      <IconFor actionId={item.id} />
-                    ) : (
-                      <ProfileAvatar username={item.username} size={26} />
-                    )}
-                    <span className="min-w-0 flex-1 truncate">
-                      {item.kind === 'action'
-                        ? item.label
-                        : (item.display_name ?? `@${item.username}`)}
-                    </span>
-                    {item.kind === 'user' && (
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        @{item.username}
-                      </span>
-                    )}
-                    {i === activeIndex && (
-                      <CornerDownLeft className="ml-auto size-3.5 shrink-0 opacity-50" />
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-
-            <div className="flex items-center gap-4 border-t border-white/8 px-4 py-2.5 text-[0.65rem] text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <kbd className="rounded border border-white/10 bg-white/5 px-1">↑</kbd>
-                <kbd className="rounded border border-white/10 bg-white/5 px-1">↓</kbd>
-                navigate
-              </span>
-              <span className="flex items-center gap-1">
-                <kbd className="rounded border border-white/10 bg-white/5 px-1">↵</kbd>
-                select
-              </span>
-            </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          showCloseButton={false}
+          aria-label="Command palette"
+          className="glass-strong z-[120] w-full max-w-lg gap-0 overflow-hidden p-0"
+        >
+          <DialogTitle className="sr-only">Command palette</DialogTitle>
+          <div className="flex items-center gap-3 border-b border-white/8 px-4">
+            {searching ? (
+              <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+            ) : (
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+            )}
+            {/* A combobox that actually points at its listbox. Without
+                role/aria-expanded/aria-controls/aria-activedescendant the
+                `<ul role="listbox">` below existed in isolation, so arrowing
+                through the results announced nothing at all. */}
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Search games, users, or jump to a page..."
+              className="h-14 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              role="combobox"
+              aria-expanded={items.length > 0}
+              aria-controls="cmdk-results"
+              aria-autocomplete="list"
+              aria-activedescendant={
+                items.length > 0 ? `cmdk-option-${activeIndex}` : undefined
+              }
+              aria-label="Search games, users and pages"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <kbd className="hidden shrink-0 rounded-md border border-white/10 bg-white/5 px-0.5 py-0.5 text-[0.6rem] text-muted-foreground sm:block">
+              ESC
+            </kbd>
           </div>
-        </div>
-      )}
+
+          {/* Live region: results resolve asynchronously and a screen-reader
+              user previously got no signal that the search had finished. */}
+          <ul
+            ref={listRef}
+            id="cmdk-results"
+            role="listbox"
+            aria-label="Commands and players"
+            className="max-h-[60dvh] overflow-y-auto p-2"
+          >
+            {items.length === 0 && query.trim().length >= 2 && !searching && (
+              <li
+                role="status"
+                aria-live="polite"
+                className="px-3 py-8 text-center text-sm text-muted-foreground"
+              >
+                No results for {query.trim()}
+              </li>
+            )}
+
+            {items.map((item, i) => (
+              <li
+                key={`${item.kind}-${item.id}`}
+                id={`cmdk-option-${i}`}
+                role="option"
+                aria-selected={i === activeIndex}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    item.kind === 'user' ? go(`/user/${item.username}`) : go(item.href)
+                  }
+                  onMouseEnter={() => setActiveIndex(i)}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors',
+                    i === activeIndex
+                      ? 'bg-white/8 text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {item.kind === 'action' ? (
+                    <IconFor actionId={item.id} />
+                  ) : (
+                    <ProfileAvatar username={item.username} size={26} />
+                  )}
+                  <span className="min-w-0 flex-1 truncate">
+                    {item.kind === 'action'
+                      ? item.label
+                      : (item.display_name ?? `@${item.username}`)}
+                  </span>
+                  {item.kind === 'user' && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      @{item.username}
+                    </span>
+                  )}
+                  {i === activeIndex && (
+                    <CornerDownLeft className="ml-auto size-3.5 shrink-0 opacity-50" />
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="flex items-center gap-4 border-t border-white/8 px-4 py-2.5 text-[0.65rem] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <kbd className="rounded border border-white/10 bg-white/5 px-1">â†‘â†“</kbd>
+              navigate
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="rounded border border-white/10 bg-white/5 px-1">â†µ</kbd>
+              select
+            </span>
+            <span className="ml-auto hidden items-center gap-1 sm:flex">
+              <kbd className="rounded border border-white/10 bg-white/5 px-1">esc</kbd>
+              close
+            </span>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

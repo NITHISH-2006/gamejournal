@@ -102,9 +102,15 @@ export default function NotificationBell({
     if (!next) return;
 
     if (unread > 0) {
-      await markAllRead().catch(() => {});
-      setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
-      setUnread(0);
+      // `markAllRead` returns a boolean precisely so this can be checked. It used
+      // to be `.catch(() => {})` followed by an unconditional local update, so a
+      // failed write left the badge reading 0 while the database still had the
+      // notifications unread — and the user could never get them back.
+      const ok = await markAllRead().catch(() => false);
+      if (ok) {
+        setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+        setUnread(0);
+      }
     }
   };
 
@@ -153,11 +159,16 @@ export default function NotificationBell({
           unread > 0 ? `Notifications (${unread} unread)` : 'Notifications'
         }
         aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls="notifications-panel"
       >
         <Bell className="size-4.5" />
         {unread > 0 && (
           <span
-            className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-brand text-[0.55rem] font-bold text-white ring-2 ring-[oklch(0.16_0.014_285)]"
+            // `ring-background`, not a hard-coded oklch(). The literal duplicated
+  // `--background`, so it would silently drift the moment that token changed —
+  // and a badge ring is exactly the kind of detail nobody re-checks visually.
+  className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-brand text-[0.55rem] font-bold text-white ring-2 ring-background"
             aria-hidden="true"
           >
             {unread > 9 ? '9+' : unread}
@@ -166,7 +177,12 @@ export default function NotificationBell({
       </button>
 
       {open && (
-        <div className="glass-strong absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl animate-rise">
+        <div
+          id="notifications-panel"
+          role="dialog"
+          aria-label="Notifications"
+          className="glass-strong absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl animate-rise"
+        >
           <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
             <p className="text-sm font-semibold">Notifications</p>
             {unread > 0 && (

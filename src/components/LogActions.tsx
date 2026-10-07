@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { StarInput } from '@/components/StarRating';
+import { StarInput } from '@/components/StarInput';
 import { LOG_STATUSES, STATUS_META, type LogStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
