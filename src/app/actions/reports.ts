@@ -30,7 +30,19 @@ import { callerKey } from '@/lib/limiter';
 
 export type ReportableType = 'log' | 'review' | 'comment' | 'user';
 
-const CONTENT_TYPES = new Set<string>(['log', 'review', 'comment', 'user']);
+/**
+ * Derived from the type rather than declared alongside it.
+ *
+ * Two independent declarations of the same set — a union and a `Set` — can
+ * drift: adding a value to the union compiles, then silently fails the runtime
+ * check and the caller gets "that content type cannot be reported".
+ */
+const CONTENT_TYPES: ReadonlySet<string> = new Set<string>([
+  'log',
+  'review',
+  'comment',
+  'user',
+] satisfies readonly ReportableType[]);
 
 export type ReportReason =
   | 'spam'
@@ -85,6 +97,36 @@ export async function reportContent(
   }
 
   const supabase = await createClient();
+
+  /**
+   * Confirm the target exists before filing.
+   *
+   * At 10 reports/minute an account could otherwise add 14,400 queue rows a
+   * day, every one pointing at a random UUID that never existed. A moderation
+   * queue that is mostly garbage costs a moderator real time and buries the
+   * reports that matter.
+   *
+   * `report_target_exists` is `security definer` precisely so this works for the
+   * many cases where the reporter cannot read the row they are reporting — a
+   * deleted comment, a private profile. It returns a boolean and discloses
+   * nothing.
+   */
+  const { data: exists, error: existsError } = await supabase.rpc('report_target_exists', {
+    p_content_type: type,
+    p_content_id: id,
+  });
+
+  if (existsError) {
+    // Pre-005 database. The check is a safety net, so its absence must not block
+    // reporting — but an operator should know the net is missing.
+    console.error('[reports] target check unavailable:', existsError.message);
+  } else if (exists === false) {
+    throw new Error('That content no longer exists, so there is nothing to report.');
+  }
+  // `data` is a bare `boolean` here, so there is no `[0]` unwrap: a function
+  // returning a scalar yields the scalar. Treating it as a row array is why the
+  // earlier draft compared `{exists}[]` with `false` and could never have fired.
+
   const { error } = await supabase.from('reports').insert({
     reporter_id: user.id,
     content_type: type,
@@ -99,16 +141,32 @@ export async function reportContent(
     // error the user has to interpret.
     if (error.code === '23505') return { ok: true };
 
-    // PGRST205 means migration 004 has not been applied. Say so plainly rather
-    // than reporting a missing table to someone who just clicked a button.
-    if (error.code === 'PGRST205' || /reports/i.test(error.message)) {
+    /**
+     * The table does not exist yet: migration 004 has not been applied.
+     *
+     * Branching on the code rather than `/reports/i.test(error.message)`,
+     * which also matched `42501 permission denied for table reports` — so an
+     * RLS misconfiguration was reported to users as a transient outage, while
+     * the log told the operator to go and apply a migration that was already
+     * applied. Two different faults, one message, and the diagnostic pointed at
+     * the wrong one.
+     *
+     * PGRST205/204 and 42P01 are PostgREST's "relation not found" and Postgres'
+     * undefined_table respectively; the two differ by which layer noticed.
+     */
+    const missingTable =
+      error.code === 'PGRST205' || error.code === 'PGRST204' || error.code === '42P01';
+
+    console.error(`[reports] insert failed [${error.code}]:`, error.message);
+
+    if (missingTable) {
       console.error('[reports] the reports table is missing. Run migration 004.');
-      throw new Error(
-        'Reporting is unavailable right now. Please try again later.'
-      );
+      throw new Error('Reporting is unavailable right now. Please try again later.');
     }
 
-    throw new Error(error.message);
+    // Anything else — including an RLS denial — is a genuine server-side fault,
+    // so it is reported verbatim to the operator and generically to the user.
+    throw new Error('Reporting is unavailable right now. Please try again later.');
   }
 
   return { ok: true };
@@ -119,6 +177,11 @@ export async function reportContent(
  *
  * Read-only, and used so the button can say "Reported" instead of inviting a
  * duplicate that the unique index would silently discard.
+ *
+ * Rate limited because this is a `'use server'` export, so it is a public POST
+ * endpoint, and it runs on every dialog open. Unthrottled, each call costs one
+ * `auth.getUser()` round trip — a cheap way to make the auth server do work on
+ * demand.
  */
 export async function getExistingReports(contentId: unknown): Promise<ReportableType[]> {
   const id = validateUuid(contentId, 'content id');
@@ -128,6 +191,8 @@ export async function getExistingReports(contentId: unknown): Promise<Reportable
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
+
+  await enforce(await callerKey('reports:read', user.id), 60, 60_000);
 
   const { data, error } = await supabase
     .from('reports')

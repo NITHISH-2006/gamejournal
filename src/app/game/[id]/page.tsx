@@ -330,9 +330,13 @@ export default async function GamePage({ params }: Params) {
                 {/* Session history, for the log's owner only. Fetched per-log here
                     rather than for all 50 logs, because it is a per-log affordance
                     and 50 extra round trips on a public page is not a trade worth
-                    making. Renders nothing until the owner expands it. */}
+                    making. Renders nothing until the owner expands it.
+
+                    `canEdit` is passed rather than left to a default inside the
+                    component, so the ownership decision lives in one place with
+                    the rest of the page's permission checks. */}
                 {user?.id === log.user_id && (
-                  <CollapsibleSessions logId={log.id} />
+                  <CollapsibleSessions logId={log.id} canEdit />
                 )}
 
                 {log.review && (

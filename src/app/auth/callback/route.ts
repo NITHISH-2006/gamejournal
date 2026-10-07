@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { getSupabaseConfig, getSiteUrl } from '@/lib/env';
+import { getSupabaseConfig, resolveRequestOrigin } from '@/lib/env';
 
 /**
  * OAuth / magic-link / email-confirmation / password-recovery callback.
@@ -22,14 +22,23 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type');
   const next = sanitizeNext(searchParams.get('next'));
 
-  // `getSiteUrl()`, NOT `request.nextUrl.origin`.
-  //
-  // `nextUrl.origin` is derived from the incoming `Host` / `X-Forwarded-Host`
-  // header, which a client controls. Using it to build the redirect target is
-  // the mirror image of the `?next=` open redirect: a spoofed Host turns every
-  // branch below into an off-site navigation. `getSiteUrl()` is the app's own
-  // configured canonical origin.
-  const origin = getSiteUrl();
+  /**
+   * `resolveRequestOrigin(request.headers.get('origin'))`, NOT
+   * `request.nextUrl.origin`.
+   *
+   * `nextUrl.origin` is derived from the incoming `Host` / `X-Forwarded-Host`
+   * header, which a client controls. Using it to build the redirect target is
+   * the mirror image of the `?next=` open redirect: a spoofed Host turns every
+   * branch below into an off-site navigation.
+   *
+   * `Origin` is consulted only because it lets a developer running `npm run
+   * dev` complete a sign-in on `localhost` while `NEXT_PUBLIC_SITE_URL` points
+   * at production — otherwise the browser lands on the deployed site, the
+   * session cookie is set for the wrong host, and the dev machine stays signed
+   * out. Only literal loopback origins are honoured; anything else, including a
+   * spoofed one, falls back to the configured canonical origin.
+   */
+  const origin = resolveRequestOrigin(request.headers.get('origin'));
 
   /**
    * A password recovery link must not land on the home page.
@@ -114,16 +123,32 @@ export async function GET(request: NextRequest) {
     // client-side JavaScript. Only the cookies Supabase asked us to set are
     // copied across.
     const response = NextResponse.redirect(redirectTo);
-    const isProduction = process.env.NODE_ENV === 'production';
+
     for (const [name, options] of cookieOptions) {
       const cookie = request.cookies.get(name);
       if (!cookie) continue;
+
+      /**
+       * `...options` FIRST, then the fallbacks.
+       *
+       * Supabase's `@supabase/ssr` sets `httpOnly: true` on the session cookies,
+       * and that is correct: they are bearer credentials that no script should
+       * read. The previous order put a hardcoded `httpOnly: true` ahead of the
+       * spread and so was harmless, but its `sameSite`/`secure` were *also*
+       * overridden by `options` — which meant the documented reason for those
+       * values was being silently discarded while appearing to be applied.
+       *
+       * Spreading first lets Supabase's own attributes win, since it is the
+       * component that knows how the cookie is consumed. `secure` is the one
+       * value we must not inherit: in local development over plain HTTP a
+       * `secure` cookie is dropped by the browser and the redirect lands on a
+       * page with no session at all — an invisible sign-in failure.
+       */
       response.cookies.set(name, cookie.value, {
-        httpOnly: true,
         sameSite: 'lax',
-        secure: isProduction,
         path: '/',
         ...options,
+        secure: options.secure ?? origin.startsWith('https://'),
       });
     }
 

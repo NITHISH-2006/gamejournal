@@ -53,12 +53,17 @@ import { getSupabaseConfig } from '@/lib/env';
 /**
  * A per-request nonce.
  *
- * `crypto.randomUUID()` is available in the Edge runtime. The base64 characters
- * are stripped so the value is safe to embed in a CSP directive and an HTML
- * attribute without escaping.
+ * `crypto.randomUUID()` is in the Edge Runtime API table. `btoa` is too — and
+ * base64 output is already `A-Za-z0-9+/=`, so nothing needs stripping.
+ *
+ * The previous version used `Buffer.from(...).toString('base64').replace(...)`.
+ * `Buffer` is *not* in the Edge API table; it resolves only because the build
+ * polyfills it, which is platform grace rather than contract. The `.replace()`
+ * was also a no-op on already-valid base64, and its comment claimed it was
+ * stripping characters it never saw.
  */
 function createNonce(): string {
-  return Buffer.from(crypto.randomUUID()).toString('base64').replace(/[^a-zA-Z0-9+/=]/g, '');
+  return btoa(crypto.randomUUID());
 }
 
 const securityHeaders: Record<string, string> = {
@@ -70,16 +75,23 @@ const securityHeaders: Record<string, string> = {
   'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
 };
 
-/** Requests whose responses must never be written to a shared cache. */
+/**
+ * Requests whose responses must never be written to a shared cache.
+ *
+ * Only genuinely private routes. The previous list also covered `/game/*`,
+ * `/user/*` and `/list/*` — which are the site's public, crawlable, linkable
+ * pages, all three emitted by `sitemap.xml`. Forcing
+ * `private, no-store, max-age=0` on them silently defeated CDN caching for
+ * essentially the whole site, in direct tension with the deliberate week-long
+ * caching of the OG cards, which are themselves about those games.
+ *
+ * `/profile` is the only per-user dashboard. `/auth/error?reason=…` renders a
+ * failure reason and `/auth/update-password` is only meaningful to the
+ * signed-in recovery session.
+ */
 function isPrivateRoute(pathname: string): boolean {
   return (
     pathname.startsWith('/profile') ||
-    pathname.startsWith('/user/') ||
-    pathname.startsWith('/list/') ||
-    pathname.startsWith('/game/') ||
-    // `/auth/error?reason=…` renders the failure reason, and
-    // `/auth/update-password` is only meaningful to the signed-in recovery
-    // session. Neither should be cached.
     pathname.startsWith('/auth')
   );
 }

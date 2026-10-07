@@ -43,7 +43,10 @@ export function isValidSessionHours(value: string | number | null | undefined): 
  * A well-shaped but impossible date is rejected rather than rolled over —
  * `new Date('2024-02-31')` silently becomes 2 March.
  */
-export function isValidSessionDate(value: string | null | undefined): string | null {
+export function isValidSessionDate(
+  value: string | null | undefined,
+  now: string = new Date().toISOString()
+): string | null {
   if (value === null || value === undefined || String(value).trim() === '') {
     return null; // empty is valid: the server fills in today
   }
@@ -61,10 +64,31 @@ export function isValidSessionDate(value: string | null | undefined): string | n
 
   // A future session is a typo, not a prediction. Compared as strings, which is
   // safe because both sides are zero-padded ISO dates.
-  const today = new Date().toISOString().slice(0, 10);
+  //
+  // `now` is injectable because a check that reads the wall clock cannot be
+  // tested: a future-date assertion written today starts failing tomorrow, and
+  // there is no way to exercise the branch without waiting.
+  const today = now.slice(0, 10);
   if (raw > today) {
     return 'You cannot log a session in the future.';
   }
 
   return null;
+}
+
+/**
+ * Validates a whole draft, returning the first problem or `null`.
+ *
+ * Hours before date: an empty date is legal and the server fills in today, so
+ * reporting a missing date first would be a false positive on the most common
+ * legitimate submission.
+ */
+export function validateSessionDraft(
+  draft: { hours?: string | number | null; playedOn?: string | null },
+  now: string = new Date().toISOString()
+): string | null {
+  const draftDateError = isValidSessionDate(draft.playedOn, now);
+  if (draftDateError) return draftDateError;
+
+  return isValidSessionHours(draft.hours);
 }

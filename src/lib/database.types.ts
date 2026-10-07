@@ -634,7 +634,50 @@ export type Database = {
           log_count: number;
         }[];
       };
-      /** Added by 004. */
+      get_game_sessions_summary: {
+        Args: { p_log_id: string };
+        Returns: {
+          session_count: number;
+          total_hours: number;
+          last_played: string | null;
+        }[];
+      };
+
+      /*
+       * ── Added by 005: correct the feature layer ────────────────────────────
+       *
+       * Each of these replaces a client-side approximation that was wrong.
+       * See `supabase/migrations/005_correct_the_feature_layer.sql` for the SQL
+       * and the reasoning.
+       */
+
+      /*
+       * ── Added by 005: correct the feature layer ────────────────────────────
+       *
+       * Each of these replaces a client-side approximation that was wrong. See
+       * `supabase/migrations/005_correct_the_feature_layer.sql` for the SQL and
+       * the reasoning behind each.
+       */
+
+      /**
+       * Replaces `resyncPlaytime`'s read-modify-write.
+       *
+       * The old version read the log's total, added the computed delta and wrote
+       * it back from the client. Two sessions ending at once raced, and the
+       * loser's minutes were overwritten. This is one statement, so Postgres
+       * serialises it. `security invoker`, so the caller's own RLS still applies.
+       */
+      sync_log_playtime: {
+        Args: { p_log_id: string; p_user_id: string };
+        Returns: null;
+      };
+
+      /**
+       * Aggregate activity heatmap, one row per day, counting `diary_date` so an
+       * import lands on the day the game was played rather than on the import
+       * day. Returns `logs` and `minutes` separately, which is what the
+       * calendar needs to distinguish "played briefly" from "logged briefly".
+       */
       get_user_activity_heatmap: {
         Args: { p_user_id: string; p_days?: number };
         Returns: {
@@ -643,14 +686,73 @@ export type Database = {
           minutes: number;
         }[];
       };
-      /** Added by 004. */
-      get_game_sessions_summary: {
-        Args: { p_log_id: string };
+
+      /**
+       * Browse games with the aggregates the card shows, computed in SQL.
+       *
+       * The UI previously fetched ratings and like counts in two further round
+       * trips per page and stitched them together client-side, so a partial
+       * failure produced cards with a rating and no likes rather than an error.
+       */
+      browse_games: {
+        Args: {
+          p_status?: string | null;
+          p_min_rating?: number | null;
+          p_tag?: string | null;
+          p_year?: number | null;
+          p_min_logs?: number | null;
+          p_sort?: string;
+          p_limit?: number;
+          p_offset?: number;
+        };
         Returns: {
-          session_count: number;
-          total_hours: number;
-          last_played: string | null;
+          game_id: number;
+          name: string;
+          cover_url: string | null;
+          release_year: number | null;
+          avg_rating: number | null;
+          log_count: number;
+          review_count: number;
+          rated_count: number;
+          last_activity: string | null;
         }[];
+      };
+
+      /**
+       * Exact total for the same filters as `browse_games`, ignoring paging.
+       *
+       * Returns a bare `bigint` rather than a table row, so `data` is the
+       * number itself and needs no `[0]?.count` unwrap.
+       */
+      browse_games_count: {
+        Args: {
+          p_status?: string | null;
+          p_min_rating?: number | null;
+          p_tag?: string | null;
+          p_year?: number | null;
+          p_min_logs?: number | null;
+        };
+        Returns: number;
+      };
+
+      /** Tag facets with counts, for the browse sidebar. */
+      get_popular_tags: {
+        Args: { p_limit?: number };
+        Returns: {
+          tag: string;
+          count: number;
+        }[];
+      };
+
+      /**
+       * Whether a report target exists, readable by users who cannot select the
+       * target itself — a deleted comment, or a private profile. Returns a
+       * boolean rather than the row, so it cannot be used to probe for private
+       * content.
+       */
+      report_target_exists: {
+        Args: { p_content_type: string; p_content_id: string };
+        Returns: boolean;
       };
     };
     Enums: {

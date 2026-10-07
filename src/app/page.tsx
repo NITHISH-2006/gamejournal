@@ -8,7 +8,6 @@ import ActivityFeed from '@/components/ActivityFeed';
 import UserStats from '@/components/UserStats';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import SuggestedUsers from '@/components/SuggestedUsers';
-import LogGameModal from '@/components/LogGameModal';
 import type { FeedLog } from '@/lib/types';
 import { Gamepad2, Compass, Sparkles, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -97,11 +96,33 @@ function Hero({ stats }: { stats: { logs: number; games: number; users: number }
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <LogGameModal />
+          {/*
+            No `<LogGameModal />` here.
+
+            The navbar already mounts one at layout level, and this was a second
+            instance — which `LogGameModal`'s own doc comment describes as the
+            bug it was written to avoid: two Radix dialogs for one `?log=1`, two
+            overlays, two competing focus traps, the second marking the first
+            `aria-hidden` while it still looked present. It survived because the
+            hero only renders for signed-out visitors and the navbar's copy is
+            gated on being signed in, so the two were never mounted at the same
+            time — a coincidence, not a fix.
+
+            Removing it also removes the last `useSearchParams()` call site with
+            no `<Suspense>` above it. That is a build error on any statically
+            rendered route, so this page was safe only because it reads cookies
+            and is therefore dynamic — one refactor away from failing with an
+            error that points at the wrong cause.
+          */}
           <Link href="/discover">
-            <Button variant="glass" size="lg">
+            <Button variant="primary" size="lg">
               <Compass />
               Explore games
+            </Button>
+          </Link>
+          <Link href="/profile">
+            <Button variant="glass" size="lg">
+              Your library
             </Button>
           </Link>
         </div>

@@ -94,3 +94,51 @@ export function getSiteUrl(): string {
   }
   return 'http://localhost:3000';
 }
+
+/**
+ * Origins that mean "the developer is on their own machine".
+ *
+ * Exact literals, not a pattern. `localhost.evil.com` and
+ * `https://localhost.attacker.example` both contain the substring but are
+ * attacker-controlled hosts, so a `/localhost/` check would let either one drive
+ * an auth redirect. Only these fixed strings are accepted.
+ */
+const LOOPBACK_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://localhost:3000',
+  'https://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+]);
+
+/** Whether an origin string is a known local dev origin. */
+export function isLoopbackOrigin(origin: string | null | undefined): boolean {
+  if (!origin) return false;
+  return LOOPBACK_ORIGINS.has(origin.toLowerCase().replace(/\/$/, ''));
+}
+
+/**
+ * The origin to use for auth redirects, given the request's `Origin` header.
+ *
+ * `getSiteUrl()` returns `NEXT_PUBLIC_SITE_URL` unconditionally when it is set,
+ * so a developer running `npm run dev` against a shared `.env.local` was bounced
+ * to production by every OAuth sign-in and password reset — signing into the
+ * deployed site from a dev machine, with the dev session then thrown away.
+ *
+ * The rule is deliberately narrow: a loopback `Origin` may be honoured, and
+ * anything else falls back to the configured site URL. An attacker cannot force
+ * this by sending `Origin`, because a cross-site request that carries a
+ * non-loopback origin gets the production URL, and browsers refuse to set
+ * `Origin` to a third party's host on a cross-origin POST.
+ *
+ * `NEXT_PUBLIC_SITE_URL` still wins on a loopback `Origin` if it is itself a
+ * loopback origin, which keeps a multi-port setup (e.g. 3002) deliberate rather
+ * than guessed.
+ */
+export function resolveRequestOrigin(requestOrigin?: string | null): string {
+  if (isLoopbackOrigin(requestOrigin) && !isLoopbackOrigin(process.env.NEXT_PUBLIC_SITE_URL)) {
+    return requestOrigin!.toLowerCase().replace(/\/$/, '');
+  }
+  return getSiteUrl();
+}

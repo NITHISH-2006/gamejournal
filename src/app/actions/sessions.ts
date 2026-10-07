@@ -181,48 +181,68 @@ export async function deletePlaySession(sessionId: unknown): Promise<void> {
 }
 
 /**
- * Recomputes `playtime_hours` from the session rows.
+ * Recomputes `playtime_hours` from the session rows, in one statement.
  *
- * Done in SQL as an aggregate rather than read-then-write in JavaScript, so two
- * concurrent session inserts cannot both read the same "before" total and lose
- * one session's hours.
+ * ── The bug ─────────────────────────────────────────────────────────────────
+ *
+ * This looked atomic and was not. It did three separate round trips:
+ *
+ *   1. `update({ playtime_hours: 0 })`          — zero the column
+ *   2. `select('hours').eq('log_id', …)`       — read every session
+ *   3. `update({ playtime_hours: total })`      — write the sum back
+ *
+ * Three round trips cannot be atomic, and step 1 made the damage worse than a
+ * lost update. Any failure between them left the column at `0` — a fabricated
+ * number, not a stale one — because step 1 committed before step 3 was attempted.
+ * If step 2 failed on a network blip, the user's real playtime was simply gone.
+ * And two sessions saved at once both read the same sessions, so the second
+ * write overwrote the first with a total that excluded it.
+ *
+ * `sync_log_playtime` (migration 005) does the whole thing as one `UPDATE` with a
+ * correlated aggregate, so there is no window in which the value is wrong. It is
+ * `security invoker`, so the caller's own RLS applies, and it re-checks ownership
+ * in SQL rather than trusting the `p_user_id` it is handed.
  */
 async function resyncPlaytime(logId: string, userId: string): Promise<void> {
   const supabase = await createClient();
-  const { error } = await supabase
-    .from('game_logs')
-    .update({ playtime_hours: 0 })
-    .eq('id', logId)
-    .eq('user_id', userId);
 
-  // A no-op fallback: if the aggregate path is unavailable (pre-004), leave the
-  // manually-entered total alone rather than zeroing a user's real data.
+  const { error } = await supabase.rpc('sync_log_playtime', {
+    p_log_id: logId,
+    p_user_id: userId,
+  });
+
+  /*
+   * A pre-005 database does not have the function.
+   *
+   * Failing here would surface as "could not save your session" after the
+   * session row had already been written, so the caller would retry and produce
+   * duplicates. The session itself is the source of truth and the stored total
+   * is derived, so an unavailable RPC is logged and the write is left to the next
+   * successful call — deliberately better than reporting a failure that did not
+   * happen.
+   */
   if (error) {
-    console.error('[sessions] playtime resync failed:', error.message);
-    return;
+    console.error(
+      '[sessions] sync_log_playtime unavailable, playtime total not refreshed:',
+      error.message
+    );
   }
-
-  const { data, error: sumError } = await supabase
-    .from('play_sessions')
-    .select('hours')
-    .eq('log_id', logId);
-
-  if (sumError) {
-    console.error('[sessions] playtime sum failed:', sumError.message);
-    return;
-  }
-
-  const total = (data ?? []).reduce((sum, row) => sum + Number(row.hours ?? 0), 0);
-
-  await supabase
-    .from('game_logs')
-    .update({ playtime_hours: Math.round(total * 100) / 100 })
-    .eq('id', logId)
-    .eq('user_id', userId);
 }
 
-/** Every session for one log, newest first. Public: logs are world-readable. */
-export async function getSessionsForLog(logId: unknown): Promise<PlaySession[]> {
+/**
+ * Every session for one log, newest first.
+ *
+ * Returns the rows *and* whether the query failed, because "this log has no
+ * sessions" and "we could not ask" are different answers and the caller renders
+ * them identically. The previous version returned `[]` on error, which the UI
+ * then displayed as an empty state — so a failed read looked like a game nobody
+ * had played.
+ *
+ * Public: logs are world-readable.
+ */
+export async function getSessionsForLog(
+  logId: unknown
+): Promise<{ sessions: PlaySession[]; error: string | null }> {
   const id = validateUuid(logId, 'log id');
   const supabase = await createClient();
 
@@ -236,10 +256,11 @@ export async function getSessionsForLog(logId: unknown): Promise<PlaySession[]> 
 
   if (error) {
     console.error('[sessions] getSessionsForLog error:', error.message);
-    return [];
+    // Distinguishable from an empty list by `error` being set.
+    return { sessions: [], error: 'Could not load play sessions.' };
   }
 
-  return (data ?? []).map((r) => ({
+  const sessions: PlaySession[] = (data ?? []).map((r) => ({
     id: r.id,
     logId: r.log_id,
     playedOn: r.played_on,
@@ -247,49 +268,6 @@ export async function getSessionsForLog(logId: unknown): Promise<PlaySession[]> 
     platform: r.platform ?? null,
     note: r.note ?? null,
   }));
-}
 
-/** A user's most recent sessions across all their logs. */
-export async function getRecentSessions(
-  userId: unknown,
-  limit = 20
-): Promise<{ session: PlaySession; gameName: string | null }[]> {
-  const id = validateUuid(userId, 'user id');
-  const capped = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 100) : 20;
-
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('play_sessions')
-    .select('id, log_id, played_on, hours, platform, note, game_logs ( games ( name ) )')
-    .eq('user_id', id)
-    .order('played_on', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(capped);
-
-  if (error) {
-    console.error('[sessions] getRecentSessions error:', error.message);
-    return [];
-  }
-
-  return (data ?? []).map((r) => {
-    const log = Array.isArray(r.game_logs) ? r.game_logs[0] : r.game_logs;
-    const game = log && typeof log === 'object' && 'games' in log
-      ? ((log as { games: unknown }).games as { name?: string } | null)
-      : null;
-    const nested = game && typeof game === 'object' && Array.isArray(game.name)
-      ? (game.name as unknown[])[0]
-      : game?.name;
-
-    return {
-      session: {
-        id: r.id,
-        logId: r.log_id,
-        playedOn: r.played_on,
-        hours: Number(r.hours ?? 0),
-        platform: r.platform ?? null,
-        note: r.note ?? null,
-      },
-      gameName: typeof nested === 'string' ? nested : null,
-    };
-  });
+  return { sessions, error: null };
 }

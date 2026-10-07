@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/Toast';
 import { formatDate } from '@/lib/date';
+import { validateSessionDraft } from '@/lib/session-validate';
 
 /**
  * Play-session log for a single game.
@@ -27,7 +28,16 @@ export default function SessionLog({
   initialSessions: PlaySession[];
   canEdit: boolean;
 }) {
-  const [sessions, setSessions] = useState(initialSessions);
+  /**
+   * The server-rendered rows are only the *starting* state.
+   *
+   * Every subsequent value comes from an explicit read, and a read that fails
+   * leaves the previous rows on screen with the error beside them. Replacing the
+   * list with `[]` on failure would tell the user a game they have played forty
+   * times has never been played.
+   */
+  const [sessions, setSessions] = useState<PlaySession[]>(initialSessions);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [hours, setHours] = useState('');
   const [playedOn, setPlayedOn] = useState('');
@@ -46,9 +56,30 @@ export default function SessionLog({
     [sessions]
   );
 
-  async function refresh() {
-    const next = await getSessionsForLog(logId).catch(() => sessions);
-    setSessions(next);
+  /**
+   * Re-reads the sessions after a mutation.
+   *
+   * Returns whether it succeeded, so the caller can distinguish "the write
+   * worked but the list is stale" from "the write worked and the list is
+   * current". The write is never rolled back on a read failure — the row exists
+   * in the database either way.
+   */
+  async function refresh(): Promise<boolean> {
+    try {
+      const { sessions: next, error: readError } = await getSessionsForLog(logId);
+      if (readError) {
+        setLoadError(readError);
+        return false;
+      }
+      setSessions(next);
+      setLoadError(null);
+      return true;
+    } catch (err) {
+      // A rejected action (network, deployment, auth) rather than a reported
+      // read failure. Same treatment: keep what is on screen.
+      setLoadError((err as Error).message || 'Could not refresh sessions.');
+      return false;
+    }
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -63,12 +94,16 @@ export default function SessionLog({
       setError('Enter how long you played for.');
       return;
     }
-    if (playedOn) {
-      const parsed = new Date(`${playedOn}T00:00:00Z`);
-      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== playedOn) {
-        setError('That date is not valid.');
-        return;
-      }
+
+    // `validateSessionDraft` is the same function the server action runs, so the
+    // client and the server cannot disagree about what is acceptable. The old
+    // inline check only verified the date round-tripped through `Date`, so
+    // `hours` was sent unvalidated and a 999-hour session failed at the server
+    // after a round trip.
+    const draftError = validateSessionDraft({ hours, playedOn });
+    if (draftError) {
+      setError(draftError);
+      return;
     }
 
     busy.current = true;
@@ -129,11 +164,29 @@ export default function SessionLog({
         )}
       </div>
 
+      {loadError && (
+        // Rendered *beside* the list rather than replacing it, so a failed
+        // refresh does not look like the history was deleted.
+        <p role="alert" className="mb-2 text-xs text-destructive">
+          {loadError}{' '}
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={pending}
+            className="underline underline-offset-2 disabled:opacity-50"
+          >
+            Try again
+          </button>
+        </p>
+      )}
+
       {sessions.length === 0 ? (
         <p className="text-xs text-ink-muted">
-          {canEdit
-            ? 'No sessions yet. Logging how long you played each day adds history the single playtime number cannot show.'
-            : 'No sessions logged yet.'}
+          {loadError
+            ? 'Could not load sessions.'
+            : canEdit
+              ? 'No sessions yet. Logging how long you played each day adds history the single playtime number cannot show.'
+              : 'No sessions logged yet.'}
         </p>
       ) : (
         <ul className="space-y-1.5">
