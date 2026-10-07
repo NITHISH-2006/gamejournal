@@ -10,6 +10,7 @@ import { getUserLists } from '@/app/actions/lists';
 import { getFollowStates } from '@/app/actions/follows';
 import FollowButton from '@/components/FollowButton';
 import StatsPanel from '@/components/StatsPanel';
+import ActivityHeatmap from '@/components/ActivityHeatmap';
 import FollowList from '@/components/FollowList';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/EmptyState';
@@ -187,7 +188,10 @@ export default async function UserProfilePage({ params }: Params) {
       </header>
 
       {/* Stats */}
-      <StatsPanel userId={profile.id} />
+      <StatsPanel userId={profile.id} ownerName={profile.display_name || profile.username} />
+
+      {/* Activity pattern. Renders nothing when migration 004 is not applied. */}
+      <ActivityHeatmap userId={profile.id} />
 
       {/* Social graph */}
       <FollowList

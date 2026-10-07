@@ -118,6 +118,7 @@ export type Database = {
       };
       game_logs: {
         Row: {
+          backlog_position: number | null;
           created_at: string;
           diary_date: string | null;
           game_id: number;
@@ -145,12 +146,19 @@ export type Database = {
           /** 0 means "logged but unrated". NOT NULL, default 0. */
           rating?: number;
           review?: string | null;
+          /**
+           * Explicit queue order within the backlog. Added by 004. Nullable so
+           * an unranked item is distinguishable from one ranked first; the
+           * index orders `nulls last`.
+           */
+          backlog_position?: number | null;
           status?: Database['public']['Enums']['log_status'];
           tags?: string[] | null;
           updated_at?: string;
           user_id: string;
         };
         Update: {
+          backlog_position?: number | null;
           created_at?: string;
           diary_date?: string | null;
           game_id?: number;
@@ -440,6 +448,97 @@ export type Database = {
           },
         ];
       };
+      /** Added by 004. */
+      reports: {
+        Row: {
+          content_id: string;
+          content_type: string;
+          created_at: string;
+          id: string;
+          notes: string | null;
+          reason: string;
+          reporter_id: string;
+          resolved_at: string | null;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          content_id: string;
+          content_type: string;
+          created_at?: string;
+          id?: string;
+          notes?: string | null;
+          reason: string;
+          reporter_id: string;
+          resolved_at?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        // No Update entry on purpose: there is no update policy, so a client
+        // update would fail with 42501 rather than silently doing nothing.
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: 'profiles_id_fkey';
+            columns: ['reporter_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      /** Added by 004. */
+      play_sessions: {
+        Row: {
+          created_at: string;
+          hours: number;
+          id: string;
+          log_id: string;
+          note: string | null;
+          platform: string | null;
+          played_on: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          hours: number;
+          id?: string;
+          log_id: string;
+          note?: string | null;
+          platform?: string | null;
+          played_on?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          hours?: number;
+          id?: string;
+          log_id?: string;
+          note?: string | null;
+          platform?: string | null;
+          played_on?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'profiles_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'play_sessions_log_id_fkey';
+            columns: ['log_id'];
+            isOneToOne: false;
+            referencedRelation: 'game_logs';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: Record<never, never>;
     Functions: {
@@ -533,6 +632,24 @@ export type Database = {
           display_name: string | null;
           bio: string | null;
           log_count: number;
+        }[];
+      };
+      /** Added by 004. */
+      get_user_activity_heatmap: {
+        Args: { p_user_id: string; p_days?: number };
+        Returns: {
+          day: string;
+          logs: number;
+          minutes: number;
+        }[];
+      };
+      /** Added by 004. */
+      get_game_sessions_summary: {
+        Args: { p_log_id: string };
+        Returns: {
+          session_count: number;
+          total_hours: number;
+          last_played: string | null;
         }[];
       };
     };

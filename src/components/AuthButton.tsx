@@ -109,6 +109,49 @@ export default function AuthButton({
     return () => subscription.unsubscribe();
   }, [supabase, router]);
 
+  /**
+   * OAuth sign-in.
+   *
+   * `redirectTo` points at `/auth/callback` rather than `/`, because that is the
+   * only route that exchanges the PKCE code for a session — landing on `/` would
+   * bounce back to a signed-out page. The route already rejects an off-site
+   * `?next=`, so the return path here is a fixed constant rather than anything
+   * derived from the current URL.
+   */
+  const handleOAuth = async (provider: 'google' | 'discord') => {
+    if (submitting.current) return;
+    submitting.current = true;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      // `signInWithOAuth` navigates away on success, so anything after an
+      // absence of error is unreachable in practice. An error means the
+      // provider is not enabled on the Supabase project, which is the common
+      // case and deserves an explanation rather than a raw SDK message.
+      if (oauthError) {
+        setError(
+          /not enabled|provider/i.test(oauthError.message)
+            ? `${provider === 'google' ? 'Google' : 'Discord'} sign-in is not enabled for this site. Use email and password.`
+            : oauthError.message
+        );
+        toast('Could not start sign-in', 'error');
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      submitting.current = false;
+      setLoading(false);
+    }
+  };
+
   const handleSignOut = async () => {
     setLoading(true);
     try {
@@ -314,6 +357,61 @@ export default function AuthButton({
             </>
           )}
         </DialogHeader>
+
+        {/* OAuth, shown on sign-in only.
+            Not available in reset mode: a password-reset link is tied to an
+            existing account, so offering "continue with Google" there is a
+            dead end for anyone who signed up with a password. */}
+        {mode !== 'reset' && (
+          <>
+            <div className="flex items-center gap-3" aria-hidden="true">
+              <span className="h-px flex-1 bg-white/10" />
+              <span className="text-xs text-ink-faint">or continue with</span>
+              <span className="h-px flex-1 bg-white/10" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="glass"
+                disabled={loading}
+                onClick={() => handleOAuth('google')}
+              >
+                <svg className="size-4" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.65l-3.57-2.77c-.99.66-2.26 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.11a6.6 6.6 0 0 1 0-4.22V7.05H2.18a11 11 0 0 0 0 9.9l3.66-2.84Z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 4.75c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.46 14.97.5 12 .5A11 11 0 0 0 2.18 7.05l3.66 2.84C6.71 6.68 9.14 4.75 12 4.75Z"
+                  />
+                </svg>
+                Google
+              </Button>
+
+              <Button
+                type="button"
+                variant="glass"
+                disabled={loading}
+                onClick={() => handleOAuth('discord')}
+              >
+                <svg className="size-4" viewBox="0 0 24 24" fill="#5865F2" aria-hidden="true">
+                  <path d="M20.32 4.57A19.79 19.79 0 0 0 15.43 3c-.24.42-.5.99-.69 1.44a18.3 18.3 0 0 0-5.48 0C9.07 3.99 8.8 3.42 8.56 3a19.74 19.74 0 0 0-4.89 1.57C.56 9.2-.28 13.71.14 18.16A19.9 19.9 0 0 0 6.15 21c.49-.66.92-1.36 1.29-2.1-.71-.27-1.39-.6-2.02-.98.17-.12.34-.25.5-.38a14.2 14.2 0 0 0 12.16 0c.16.13.33.26.5.38-.63.38-1.31.71-2.02.98.37.74.8 1.44 1.29 2.1a19.87 19.87 0 0 0 6.01-2.84c.5-5.15-.85-9.63-3.54-13.59ZM8.02 15.44c-1.18 0-2.15-1.08-2.15-2.4 0-1.32.95-2.4 2.15-2.4 1.21 0 2.18 1.09 2.16 2.4 0 1.32-.95 2.4-2.16 2.4Zm7.96 0c-1.18 0-2.15-1.08-2.15-2.4 0-1.32.95-2.4 2.15-2.4 1.21 0 2.18 1.09 2.16 2.4 0 1.32-.95 2.4-2.16 2.4Z" />
+                </svg>
+                Discord
+              </Button>
+            </div>
+          </>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-3">
           {mode === 'signup' && (

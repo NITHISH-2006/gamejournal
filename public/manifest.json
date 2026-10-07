@@ -1,0 +1,42 @@
+{
+  "name": "GameJournal — track every game you play",
+  "short_name": "GameJournal",
+  "description": "Log, rate, review and discover video games. Your backlog, your sessions, your reviews.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0c0c12",
+  "theme_color": "#7c3aed",
+  "categories": ["games", "social", "lifestyle"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Discover games",
+      "short_name": "Discover",
+      "url": "/discover",
+      "description": "Search the catalogue and see what is trending"
+    },
+    {
+      "name": "Your profile",
+      "short_name": "Profile",
+      "url": "/profile",
+      "description": "Your backlog, sessions and stats"
+    }
+  ]
+}

@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import Navbar from '@/components/Navbar';
 import Ambient from '@/components/Ambient';
+import RouteAnnouncer from '@/components/RouteAnnouncer';
 import { ToastProvider } from '@/components/Toast';
 import { getSiteUrl } from '@/lib/env';
 
@@ -67,6 +69,19 @@ export const metadata: Metadata = {
   // private dashboard lives at the site root. Each page sets its own canonical
   // where one is meaningful, and `metadataBase` above resolves relative ones.
   formatDetection: { telephone: false },
+  manifest: '/manifest.json',
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: '32x32' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'GameJournal',
+    statusBarStyle: 'black-translucent',
+  },
 };
 
 export const viewport: Viewport = {
@@ -90,6 +105,12 @@ export default function RootLayout({
     >
       <body className="min-h-dvh antialiased">
         <ToastProvider>
+          {/* Route-change announcements for assistive technology. Without this a
+              single-page navigation is completely silent: nothing in the DOM
+              changes and no focus moves, so a screen-reader user gets no signal
+              that the page changed at all. `pathname` is the key so it only
+              fires on an actual navigation. */}
+<RouteAnnouncerSlot />
           <Ambient />
           <a
             href="#main"
@@ -98,7 +119,10 @@ export default function RootLayout({
             Skip to content
           </a>
           <Navbar />
-          <main id="main" className="pt-20 pb-24">
+          {/* `tabIndex={-1}` so the skip link actually moves focus. In WebKit a
+              non-focusable target does not receive focus on activation, so the
+              next Tab returned to the navbar. */}
+          <main id="main" tabIndex={-1} className="pt-20 pb-24 outline-none">
             {children}
           </main>
           {/* `pb-24` on <main> clears the mobile tab bar, but the footer sits
@@ -116,7 +140,17 @@ export default function RootLayout({
             </div>
           </footer>
         </ToastProvider>
+        <Analytics />
       </body>
     </html>
   );
+}
+
+/**
+ * Announces client-side navigations. Its own Client Component — see the note
+ * there. Declared here rather than imported so the layout keeps a single
+ * `<body>` contract.
+ */
+function RouteAnnouncerSlot() {
+  return <RouteAnnouncer />;
 }

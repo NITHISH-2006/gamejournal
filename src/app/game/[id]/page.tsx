@@ -7,7 +7,7 @@ import { getUser } from '@/lib/supabase';
 import { getUserLists } from '@/app/actions/lists';
 import { getWatchlistMembership } from '@/app/actions/watchlist';
 import { validateGameId } from '@/lib/validation';
-import { formatYear, formatPlaytime } from '@/lib/date';
+import { formatDate, formatYear, formatPlaytime } from '@/lib/date';
 import { STATUS_META, type LogStatus } from '@/lib/types';
 import { getSiteUrl } from '@/lib/env';
 
@@ -16,6 +16,7 @@ import WatchlistButton from '@/components/WatchlistButton';
 import LikeButton from '@/components/LikeButton';
 import LogGameButton from '@/components/LogGameButton';
 import CommentThread from '@/components/CommentThread';
+import CollapsibleSessions from '@/components/CollapsibleSessions';
 import { getCommentsForLogs, type Comment } from '@/app/actions/comments';
 import { getOwnProfile } from '@/app/actions/profiles';
 import LogActions from '@/components/LogActions';
@@ -306,9 +307,7 @@ export default async function GamePage({ params }: Params) {
                       <StatusPill status={log.status} size="xs" />
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {log.diary_date
-                        ? `Played ${log.diary_date}`
-                        : `Logged ${new Date(log.created_at).toISOString().slice(0, 10)}`}
+                      {formatDate(log.diary_date ?? log.created_at)}
                     </p>
                   </div>
 
@@ -327,6 +326,14 @@ export default async function GamePage({ params }: Params) {
                 <div className="mt-3">
                   <StarRating value={log.rating} size="sm" showValue />
                 </div>
+
+                {/* Session history, for the log's owner only. Fetched per-log here
+                    rather than for all 50 logs, because it is a per-log affordance
+                    and 50 extra round trips on a public page is not a trade worth
+                    making. Renders nothing until the owner expands it. */}
+                {user?.id === log.user_id && (
+                  <CollapsibleSessions logId={log.id} />
+                )}
 
                 {log.review && (
                   <ReviewText

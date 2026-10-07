@@ -11,6 +11,7 @@ import { getCapabilities } from '@/lib/capabilities';
 import CreateListModal from '@/components/CreateListModal';
 import EditProfileForm from '@/components/EditProfileForm';
 import StatsPanel from '@/components/StatsPanel';
+import ActivityHeatmap from '@/components/ActivityHeatmap';
 import FollowList from '@/components/FollowList';
 import LogActions from '@/components/LogActions';
 import { Card } from '@/components/ui/card';
@@ -144,7 +145,11 @@ export default async function ProfilePage() {
       </header>
 
       {/* Stats */}
-      <StatsPanel userId={user.id} />
+      <StatsPanel userId={user.id} ownerName="your" />
+
+      {/* Activity pattern. Renders nothing when migration 004 is not applied,
+          because an empty grid would read as "you never play". */}
+      <ActivityHeatmap userId={user.id} />
 
       {/* Social graph */}
       <FollowList

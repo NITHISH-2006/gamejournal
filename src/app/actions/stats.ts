@@ -260,3 +260,79 @@ function numOrNull(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
+
+/* ---------------------------------------------------------------------------
+ * Activity heatmap and session summaries (migration 004)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Per-day activity, for a contribution-style grid.
+ *
+ * Separate from `getActivityStats` because the two answer different questions at
+ * very different costs: this one returns up to `days` rows where the streaks
+ * query returns a single row, and the dashboard strip should not inherit the
+ * heatmap's cost.
+ *
+ * The series is dense — every day in the window, including zeroes. A sparse
+ * series would leave the client to infer the gaps, and a missing day is
+ * indistinguishable from an unrendered one.
+ */
+export type HeatmapDay = { day: string; logs: number; minutes: number };
+
+export async function getActivityHeatmap(
+  userId: unknown,
+  days = 365
+): Promise<HeatmapDay[] | null> {
+  const id = validateUuid(userId, 'user id');
+  await enforce(await callerKey('stats:heatmap'), 60, 60_000);
+
+  // Clamped here as well as in SQL. The SQL clamp is the guarantee; this avoids
+  // asking the database for a year when the caller wanted a fortnight.
+  const span = Number.isFinite(days) ? Math.min(Math.max(days, 7), 1460) : 365;
+
+  const supabase = createPublicClient();
+  const { data, error } = await supabase.rpc('get_user_activity_heatmap', {
+    p_user_id: id,
+    p_days: span,
+  });
+
+  if (error) {
+    // Pre-004 database. The caller renders nothing rather than an empty grid,
+    // because a grid of zeroes reads as "this player never plays".
+    console.error('[stats] getActivityHeatmap error:', error.message);
+    return null;
+  }
+
+  return (data ?? []).map((r) => ({
+    day: r.day,
+    logs: Number(r.logs ?? 0),
+    minutes: Number(r.minutes ?? 0),
+  }));
+}
+
+/** Session rollup for one log. Null when the RPC is not installed. */
+export async function getSessionsSummary(
+  logId: unknown
+): Promise<{ sessionCount: number; totalHours: number; lastPlayed: string | null } | null> {
+  const id = validateUuid(logId, 'log id');
+  await enforce(await callerKey('stats:sessions'), 60, 60_000);
+
+  const supabase = createPublicClient();
+  const { data, error } = await supabase.rpc('get_game_sessions_summary', {
+    p_log_id: id,
+  });
+
+  if (error) {
+    console.error('[stats] getSessionsSummary error:', error.message);
+    return null;
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return { sessionCount: 0, totalHours: 0, lastPlayed: null };
+
+  return {
+    sessionCount: Number(row.session_count ?? 0),
+    totalHours: Number(row.total_hours ?? 0),
+    lastPlayed: row.last_played ?? null,
+  };
+}

@@ -25,8 +25,17 @@ function initials(count: number) {
  * case on a pre-002 database. Degrading to "no panel" is better than showing a
  * grid of zeros, which reads as "this player has done nothing" rather than
  * "this feature is not installed".
+ * `ownerName` exists because this component is rendered on other people's public
+ * profiles as well as on /profile. The heading said "Your statistics" on
+ * somebody else's page, which is both wrong and misleading for a screen reader.
  */
-export default async function StatsPanel({ userId }: { userId: string }) {
+export default async function StatsPanel({
+  userId,
+  ownerName = 'this player',
+}: {
+  userId: string;
+  ownerName?: string;
+}) {
   const [stats, review] = await Promise.all([
     getActivityStats(userId).catch(() => null),
     getYearInReview(userId).catch(() => null),
@@ -37,7 +46,10 @@ export default async function StatsPanel({ userId }: { userId: string }) {
   const peak = Math.max(1, ...(review?.mostPlayed ?? []).map((g) => g.logs));
 
   return (
-    <section className="space-y-5" aria-label="Your statistics">
+    <section
+      className="space-y-5"
+      aria-label={`${ownerName.charAt(0).toUpperCase()}${ownerName.slice(1)} statistics`}
+    >
       {/* Headline numbers */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatTile
