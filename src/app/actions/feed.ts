@@ -44,82 +44,133 @@ function normalize(rows: unknown[], usernames?: Record<string, string>): FeedLog
   });
 }
 
-const SELECT = `
+/**
+ * Column lists, one per level of schema support.
+ *
+ * Composed from a single list rather than hand-written six times. An earlier
+ * version declared four constants of which two were byte-identical, so its
+ * fourth fallback tier was a guaranteed-identical retry that could never
+ * succeed where the third failed â€” and two of them wrongly omitted
+ * `has_spoilers`, a column that has existed since 001. Because `normalize()`
+ * reads the spoiler flag straight off the row, that made the *rescue* tier the
+ * one that leaked every spoiler review on the feed.
+ */
+
+/** 002 and later: adds `playtime_hours`. */
+const COLS_FULL = `
   id, game_id, user_id, status, rating, review,
-  diary_date, tags, has_spoilers, is_favorite, created_at,
-  games ( name, cover_url ),
-  profiles ( username )
+  diary_date, tags, has_spoilers, is_favorite, playtime_hours, created_at,
+  games ( name, cover_url )
 `;
 
 /**
- * The same projection without the `profiles` embed.
- *
- * Used as a fallback when PostgREST cannot resolve the author relationship.
- * On a database without the `game_logs.user_id -> profiles.id` foreign key,
- * the embed fails with PGRST200 for the WHOLE query, so the feed — the app's
- * main surface — renders empty and every post loses its author. The usernames
- * are then resolved in a second query, which is the same resilience
- * `getCommentsForLogs` uses for comment authors.
+ * Base 001 columns. Deliberately still includes `has_spoilers` and
+ * `is_favorite` â€” 001 created them, so a tier described as "pre-002" must not
+ * drop them.
  */
-const SELECT_NO_EMBED = `
+const COLS_001 = `
   id, game_id, user_id, status, rating, review,
   diary_date, tags, has_spoilers, is_favorite, created_at,
   games ( name, cover_url )
 `;
 
-/** 001-era columns only, for a database where 002 has not been applied. */
-const SELECT_LEGACY = `
+/**
+ * A database older than 001, which has neither column. Verified against the live
+ * project, whose `game_logs` carried `hours_played`, `started_at` and
+ * `completed_at` and no `has_spoilers`.
+ */
+const COLS_PRE_001 = `
   id, game_id, user_id, status, rating, review,
   diary_date, tags, created_at,
   games ( name, cover_url )
 `;
 
-/** No columns beyond the 001 base schema and no `profiles` embed. */
-const SELECT_MINIMAL = `
-  id, game_id, user_id, status, rating, review,
-  diary_date, tags, created_at,
-  games ( name, cover_url )
+/**
+ * The author embed â€” the ladder's second axis.
+ *
+ * A missing `game_logs.user_id -> profiles.id` foreign key makes the embed
+ * fail with PGRST200 for the *whole* query, so the feed â€” the app's main
+ * surface â€” rendered empty and every post lost its author. Usernames are then
+ * resolved in a second query, the same resilience `getCommentsForLogs` uses.
+ * Migration 003 adds the missing foreign keys.
+ */
+const EMBED_AUTHOR = `profiles ( username )`;
+
+type Tier = { label: string; cols: string; embedded: boolean };
+
+/** Ordered most-complete first. Each tier is a distinct failure the one above
+ * it cannot survive, and every combination of the two axes appears once. */
+const LADDER: Tier[] = [
+  { label: '002+ columns, with author embed', cols: COLS_FULL, embedded: true },
+  {
+    label: '002+ columns, no author embed (missing game_logs -> profiles FK)',
+    cols: COLS_FULL,
+    embedded: false,
+  },
+  { label: '001 columns, with author embed', cols: COLS_001, embedded: true },
+  { label: '001 columns, no author embed', cols: COLS_001, embedded: false },
+  { label: 'pre-001 columns, with author embed', cols: COLS_PRE_001, embedded: true },
+  { label: 'pre-001 columns, no author embed', cols: COLS_PRE_001, embedded: false },
+];
+
+/** Composes a projection from a column list and whether to embed the author. */
+function project(cols: string, embedded: boolean): string {
+  return embedded ? `${cols},
+  ${EMBED_AUTHOR}
+` : `${cols}
 `;
+}
+
+/**
+ * Upper bound on the `user_id = any(...)` filter in the Following feed.
+ * Every other batched read is bounded (`getLikesForLogs` 200,
+ * `getCommentsForLogs` 200, `getFollowStates` 200, `getWatchlistMembership` 200).
+ */
+const MAX_FOLLOW_FILTER_IDS = 500;
 
 type AnyQuery = PromiseLike<{
   data: unknown;
   error: { message: string; code?: string } | null;
 }>;
 
-type QueryOutcome = { data: unknown[] | null; error: { message: string } | null };
+type QueryOutcome = {
+  data: unknown[] | null;
+  error: { message: string } | null;
+  /**
+   * Whether the successful tier included the author embed.
+   *
+   * The caller needs this. `fillUsernames` costs a second query, so it must only
+   * run on a tier that could not resolve usernames â€” running it unconditionally
+   * issued a redundant `profiles` round trip on every single feed page view,
+   * fetching ids that had already come back in the same response.
+   */
+  embedded: boolean;
+};
 
 /**
  * Progressively degrades the projection until the database accepts one.
  *
- * Four tiers, each tried only if the previous failed:
- *   1. full projection, with the author embed
- *   2. full projection, no author embed        (missing FK)
- *   3. 001 columns, with the author embed      (002 not applied)
- *   4. 001 columns, no author embed            (neither)
+ * Tries `LADDER` in order and returns the first tier the database accepts, plus
+ * whether that tier resolved the author embed.
  *
- * Tier 2 is what the live project needs; it was hitting tier 1 and returning
- * zero rows with only a server log to show for it.
+ * All tiers are attempted for a genuine failure; if the embed is merely missing,
+ * the "no author embed" tier succeeds and the response is still complete. Only
+ * a total failure â€” every tier rejected â€” is an error.
  */
 async function runLogQuery(
   build: (select: string) => AnyQuery,
   label: string
 ): Promise<QueryOutcome> {
-  const attempts: [string, string][] = [
-    [SELECT, 'full projection'],
-    [SELECT_NO_EMBED, 'no author embed (missing game_logs -> profiles FK)'],
-    [SELECT_LEGACY, 'pre-002 columns'],
-    [SELECT_MINIMAL, 'pre-002 columns, no author embed'],
-  ];
-
   let lastError: { message: string } | null = null;
 
-  for (const [select, description] of attempts) {
+  for (const tier of LADDER) {
+    const select = project(tier.cols, tier.embedded);
     const result = await build(select);
     if (!result.error) {
-      if (description !== 'full projection') {
-        announceDegraded(`feed:${label}`, description);
+      if (tier.embedded !== true || tier.cols !== COLS_FULL) {
+        announceDegraded(`feed:${label}`, tier.label);
       }
-      return { data: (result.data as unknown[]) ?? null, error: null };
+      return { data: (result.data as unknown[]) ?? null, error: null, embedded: tier.embedded };
     }
     lastError = result.error;
     // Deliberately silent per attempt. These failures are the *expected*
@@ -129,12 +180,12 @@ async function runLogQuery(
     // ladder settled on a lower tier is reported, and only once per process.
   }
 
-  // Every tier failed — that *is* an incident.
+  // Every tier failed â€” that *is* an incident.
   console.error(
-    `[feed] ${label}: all ${attempts.length} projections failed. ` +
+    `[feed] ${label}: all ${LADDER.length} projections failed. ` +
       `Last error: ${lastError?.message || '(empty message)'}`
   );
-  return { data: null, error: lastError };
+  return { data: null, error: lastError, embedded: false };
 }
 
 /**
@@ -150,7 +201,10 @@ function announceDegraded(scope: string, detail: string): void {
 /**
  * Resolves usernames for rows whose author could not be embedded.
  *
- * Only called on the degraded path, so it costs nothing on a healthy database.
+ * Only called when `runLogQuery` reports `embedded: false`. It was previously
+ * called unconditionally on every feed page view, which issued a redundant
+ * `profiles` query for up to 21 ids whose usernames had already arrived in the
+ * feed response itself.
  */
 async function fillUsernames(
   rows: unknown[]
@@ -195,7 +249,7 @@ async function fillUsernames(
 /**
  * Keyset cursor for `(created_at DESC, id DESC)`.
  *
- * ── Why the cursor carries two columns ──────────────────────────────────────
+ * â”€â”€ Why the cursor carries two columns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
  * The feed orders by `created_at DESC, id DESC` but paged on `created_at`
  * alone, filtering with `created_at < cursor`. That silently drops every row
@@ -204,7 +258,7 @@ async function fillUsernames(
  * `< cursor`. It appears on no page, and no page reports a gap.
  *
  * `game_logs.created_at` defaults to `now()`, which in Postgres is the
- * *transaction* timestamp — so every row written by one insert shares it, and
+ * *transaction* timestamp â€” so every row written by one insert shares it, and
  * two rapid submissions can collide too. This is a data-loss bug that only
  * shows up once a feed has any ties at all.
  *
@@ -217,8 +271,8 @@ async function fillUsernames(
  *
  * The timestamp is normalised to `toISOString()` before it goes into the
  * cursor. PostgREST returns `2024-01-01T00:00:00+00:00`, and a raw `+` in a
- * query string decodes to a space — the comparison would silently be against
- * the wrong instant. `…Z` needs no escaping.
+ * query string decodes to a space â€” the comparison would silently be against
+ * the wrong instant. `â€¦Z` needs no escaping.
  */
 const CURSOR_SEP = '|';
 
@@ -226,11 +280,37 @@ function encodeCursor(createdAt: string, id: string): string {
   return `${new Date(createdAt).toISOString()}${CURSOR_SEP}${id}`;
 }
 
+/**
+ * Exactly the shape `toISOString()` produces.
+ *
+ * The cursor is client-supplied and both halves are spliced verbatim into an
+ * `.or()` filter, so a crafted cursor could inject an extra OR clause and widen
+ * the result set — breaking the pagination invariant, and a reliable way to
+ * force all six ladder tiers to fail (and thus four wasted queries) on demand.
+ * `game_logs` is world-readable so this is not a disclosure hole, but
+ * unvalidated input in a query grammar should not be reachable.
+ */
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function decodeCursor(cursor: string | null): { createdAt: string; id: string } | null {
   if (!cursor) return null;
   const at = cursor.indexOf(CURSOR_SEP);
   if (at <= 0) return null;
-  return { createdAt: cursor.slice(0, at), id: cursor.slice(at + 1) };
+
+  const createdAt = cursor.slice(0, at);
+  const id = cursor.slice(at + 1);
+
+  // An unparseable cursor is treated as no cursor at all, which serves the
+  // first page. Returning null is strictly better than passing attacker-shaped
+  // text into a filter.
+  if (!ISO_TIMESTAMP.test(createdAt)) return null;
+  if (!UUID.test(id)) return null;
+  // Belt and braces: confirm it really is the instant it claims to be.
+  if (Number.isNaN(Date.parse(createdAt))) return null;
+
+  return { createdAt, id };
 }
 
 /**
@@ -252,7 +332,7 @@ export async function getFeedData(
 
   // `Number.isFinite` rather than Math.min: `opts.limit` arrives from a client,
   // so it can be a string or NaN. `Math.max(NaN, 1)` is NaN, `Math.min(NaN, 50)`
-  // is NaN, and `.limit(NaN)` makes PostgREST reject the query — which, inside
+  // is NaN, and `.limit(NaN)` makes PostgREST reject the query â€” which, inside
   // the retrying `runLogQuery` helper, produced four identical error lines and
   // an empty feed.
   const rawLimit = Number(opts.limit);
@@ -276,16 +356,25 @@ export async function getFeedData(
 
       // Previously unchecked, so a failed read yielded `ids = []` and the
       // "Following" tab rendered permanently empty with no server output at
-      // all — the single most invisible failure mode in the app.
+      // all â€” the single most invisible failure mode in the app.
       if (followError) {
         console.error('[feed] following lookup error:', followError.message);
         return { logs: [], nextCursor: null };
       }
 
-      const ids = (followRows ?? []).map((r) => r.following_id as string);
+      // Bounded.
+      //
+      // `ids` came straight from the caller's follow list with no cap. A user
+      // following 5,000 accounts produced a GET URL around 185 KB, which exceeds
+      // the request-line limit and fails with 414 â€” at which point every
+      // projection in the ladder fails and the Following tab renders silently
+      // empty. Every other batched read in this codebase is bounded.
+      const ids = (followRows ?? [])
+        .map((r) => r.following_id as string)
+        .slice(0, MAX_FOLLOW_FILTER_IDS);
       if (!ids.length) return { logs: [], nextCursor: null };
 
-      const { data, error } = await runLogQuery(
+      const { data, error, embedded } = await runLogQuery(
         (select) => {
           let q = supabase
             .from('game_logs')
@@ -301,7 +390,7 @@ export async function getFeedData(
       );
       if (error) return { logs: [], nextCursor: null };
 
-      return paginate(normalize(data ?? [], await fillUsernames(data ?? [])), limit);
+      return paginate(normalize(data ?? [], embedded ? {} : await fillUsernames(data ?? [])), limit);
     }
 
     if (type === 'trending') {
@@ -372,7 +461,11 @@ export async function getFeedData(
         return { logs: [], nextCursor: null };
       }
 
-      const rows = normalize(flat, await fillUsernames(flat));
+      // Every per-game query resolves the same schema, so the embed result is
+      // uniform across them. All-or-nothing keeps this honest: mixing embedded
+      // and non-embedded rows would silently attribute some posts to nobody.
+      const anyEmbedded = perGame.some((r) => r.embedded);
+      const rows = normalize(flat, anyEmbedded ? {} : await fillUsernames(flat));
 
       // Rank order is by log frequency, which `ranked` already encodes.
       const byGame = new Map(rows.map((r) => [r.game_id, r]));
@@ -386,7 +479,7 @@ export async function getFeedData(
     }
 
     // global
-    const { data, error } = await runLogQuery(
+    const { data, error, embedded } = await runLogQuery(
       (select) => {
         let q = supabase
           .from('game_logs')
@@ -401,7 +494,7 @@ export async function getFeedData(
     );
     if (error) return { logs: [], nextCursor: null };
 
-    return paginate(normalize(data ?? [], await fillUsernames(data ?? [])), limit);
+    return paginate(normalize(data ?? [], embedded ? {} : await fillUsernames(data ?? [])), limit);
   } catch (err) {
     console.error('[feed] getFeedData error:', (err as Error).message);
     return { logs: [], nextCursor: null };
@@ -428,7 +521,7 @@ export async function getFeedTotals(): Promise<{ logs: number; users: number }> 
 
   // Errors were previously discarded on both. PostgREST returns `count: null`
   // on failure, so `count ?? 0` turned any RLS or permission problem into a
-  // site-wide "0 logs / 0 players" strip — with nothing in the log to explain
+  // site-wide "0 logs / 0 players" strip â€” with nothing in the log to explain
   // it. `exactCount` logs and returns 0 instead of hiding the cause.
   const [logs, users] = await Promise.all([
     exactCount(

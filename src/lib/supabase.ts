@@ -1,5 +1,6 @@
 import { createBrowserClient, createServerClient } from '@supabase/ssr';
 import { getSupabaseConfig } from '@/lib/env';
+import type { Database } from '@/lib/database.types';
 
 /**
  * Returns the signed-in Supabase user, or `null`.
@@ -88,7 +89,7 @@ export async function createClient() {
   const cookieStore = await cookies();
   const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig();
 
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
+  return createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -123,7 +124,7 @@ export async function createClient() {
  */
 function makeBrowserClient() {
   const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig();
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  return createBrowserClient<Database>(supabaseUrl, supabaseAnonKey);
 }
 
 let browserClient: ReturnType<typeof makeBrowserClient> | null = null;
@@ -142,7 +143,7 @@ export function createBrowserSupabaseClient() {
  */
 function makePublicClient() {
   const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig();
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
+  return createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     // No request scope: reads only, and there is no session to persist.
     cookies: {
       getAll: () => [],

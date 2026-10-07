@@ -635,22 +635,57 @@ export const getUserStats = cache(async (
       ),
     ]);
 
-  // Only genuinely-rated logs, matching `get_game_stats` in the migration.
+// Only genuinely-rated logs, matching `get_game_stats` in the migration.
   // 002 makes `rating NOT NULL` with 0 meaning "unrated", so `is not null`
   // matched every row and pulled the average toward zero.
-  const { data: ratedRows, error: ratedError } = await supabase
-    .from('game_logs')
-    .select('rating')
-    .eq('user_id', userId)
-    .gt('rating', 0);
+  //
+  // Paged rather than a single unbounded read. PostgREST caps a response at
+  // `db-max-rows` (1000 by default) and truncates silently, so the previous
+  // single request computed the average over an arbitrary subset for anyone past
+  // 1,000 rated logs — a wrong number rather than a rounded one, while the
+  // caller-facing comment claimed the cost was constant.
+  //
+  // `get_user_activity_stats` would compute this in one round trip, but this
+  // action must keep working on a database where 002 has not been applied, so
+  // it pages instead. The ceiling is high enough that reaching it means the
+  // answer is logged as approximate rather than silently wrong.
+  const RATINGS_PAGE = 1000;
+  const RATINGS_CEILING = 20_000;
+  const ratings: number[] = [];
+  let offset = 0;
 
-  if (ratedError) {
-    console.error('[discover] getUserStats ratings error:', ratedError.message);
+  while (offset < RATINGS_CEILING) {
+    const { data: page, error: pageError } = await supabase
+      .from('game_logs')
+      .select('rating')
+      .eq('user_id', userId)
+      .gt('rating', 0)
+      .order('rating', { ascending: true })
+      .range(offset, offset + RATINGS_PAGE - 1);
+
+    if (pageError) {
+      console.error('[discover] getUserStats ratings error:', pageError.message);
+      break;
+    }
+
+    for (const row of page ?? []) {
+      const value = row.rating as number;
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+        ratings.push(value);
+      }
+    }
+
+    // A short page means we have reached the end.
+    if (!page || page.length < RATINGS_PAGE) break;
+    offset += RATINGS_PAGE;
   }
 
-  const ratings = (ratedRows ?? [])
-    .map((r) => r.rating as number)
-    .filter((r) => typeof r === 'number' && Number.isFinite(r) && r > 0);
+  if (ratings.length >= RATINGS_CEILING) {
+    console.warn(
+      `[discover] getUserStats: ${userId} has at least ${RATINGS_CEILING} rated logs; ` +
+        'the average is computed from a truncated set. Apply migration 003 and switch to get_user_activity_stats.'
+    );
+  }
 
   const avgRating = ratings.length
     ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10

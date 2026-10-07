@@ -11,6 +11,7 @@ import {
   validateUuid,
 } from '@/lib/validation';
 import type { UserList } from '@/lib/types';
+import type { Database } from '@/lib/database.types';
 
 /**
  * Security note
@@ -30,7 +31,7 @@ export async function createList(
   isPublic = false
 ): Promise<{ id: string }> {
   const user = await requireUser();
-  await enforce(await callerKey('list:create'), 20, 60_000);
+  await enforce(await callerKey('list:create', user.id), 20, 60_000);
 
   const listName = validateListName(name);
   const listDescription = validateListDescription(description);
@@ -42,7 +43,11 @@ export async function createList(
       user_id: user.id,
       name: listName,
       description: listDescription,
-      is_public: isPublic,
+      // Coerced, not trusted. `isPublic` is typed `boolean` but this is a public
+// Server Action endpoint, so the runtime value is caller-supplied; a non-boolean
+// reached a boolean column and came back as a raw PostgREST 400. The sibling
+// `updateList` already did this.
+is_public: Boolean(isPublic),
     })
     .select('id')
     .single();
@@ -171,7 +176,7 @@ export async function addGameToList(
   gameId: unknown
 ): Promise<{ success: true }> {
   const user = await requireUser();
-  await enforce(await callerKey('list:mutate'), 60, 60_000);
+  await enforce(await callerKey('list:mutate', user.id), 60, 60_000);
 
   const id = validateUuid(listId, 'list id');
   const gid = validateGameId(gameId);
@@ -184,6 +189,12 @@ export async function addGameToList(
     .insert({ list_id: id, game_id: gid });
 
   if (error && error.code !== '23505') throw new Error(error.message);
+
+  // These two are reached from `AddToListButton`, which calls them directly.
+  // Every sibling in this file revalidates (`createList`, `deleteList`,
+  // `updateList`), so omitting it here left `/list/<id>`, `/profile` and
+  // `/user/<username>` serving stale game counts until ISR expired.
+  revalidateList();
   return { success: true };
 }
 
@@ -192,7 +203,7 @@ export async function removeGameFromList(
   gameId: unknown
 ): Promise<{ success: true }> {
   const user = await requireUser();
-  await enforce(await callerKey('list:mutate'), 60, 60_000);
+  await enforce(await callerKey('list:mutate', user.id), 60, 60_000);
 
   const id = validateUuid(listId, 'list id');
   const gid = validateGameId(gameId);
@@ -207,12 +218,14 @@ export async function removeGameFromList(
     .eq('game_id', gid);
 
   if (error) throw new Error(error.message);
+
+  revalidateList();
   return { success: true };
 }
 
 export async function deleteList(listId: unknown): Promise<{ success: true }> {
   const user = await requireUser();
-  await enforce(await callerKey('list:delete'), 20, 60_000);
+  await enforce(await callerKey('list:delete', user.id), 20, 60_000);
 
   const id = validateUuid(listId, 'list id');
   await assertOwnership(id, user.id);
@@ -231,12 +244,14 @@ export async function updateList(
   patch: { name?: unknown; description?: unknown; isPublic?: unknown }
 ): Promise<{ success: true }> {
   const user = await requireUser();
-  await enforce(await callerKey('list:mutate'), 30, 60_000);
+  await enforce(await callerKey('list:mutate', user.id), 30, 60_000);
 
   const id = validateUuid(listId, 'list id');
   await assertOwnership(id, user.id);
 
-  const update: Record<string, unknown> = {};
+  // Typed as the table's `Update` shape rather than `Record<string, unknown>`
+  // so a field that is not a real column is a compile error.
+  const update: Database['public']['Tables']['lists']['Update'] = {};
   if (patch.name !== undefined) update.name = validateListName(patch.name);
   if (patch.description !== undefined) {
     update.description = validateListDescription(patch.description);
@@ -267,7 +282,7 @@ export async function addGameToOwnedLists(
   // The only mutating action in this file with no `enforce(...)`, unlike the
   // four around it. It performs a bulk insert, so an unbounded caller could
   // otherwise drive large writes.
-  await enforce(await callerKey('list:write'), 60, 60_000);
+  await enforce(await callerKey('list:write', user.id), 60, 60_000);
   const gid = validateGameId(gameId);
   const ids = (listIds ?? [])
     .map((v) => {
@@ -290,7 +305,7 @@ export async function addGameToOwnedLists(
     .in('id', ids);
 
   // Previously unchecked. On failure `owned` was empty, `insertable` was empty,
-  // and the function returned having done nothing at all — "add to all my
+  // and the function returned having done nothing at all â€” "add to all my
   // lists" silently no-oped. A failed ownership check is not evidence that the
   // caller owns nothing.
   if (ownershipError) {
@@ -317,7 +332,7 @@ export async function addGameToOwnedLists(
  * Removed: `export { getCapabilities }`.
  *
  * The comment claimed it was re-exported for the watchlist, but the watchlist
- * imports it from `@/lib/capabilities` and nothing imported it from here — so
+ * imports it from `@/lib/capabilities` and nothing imported it from here â€” so
  * this re-export existed only to turn a plain library function into a public
  * Server Action endpoint that runs a database probe on demand. Being `async` and
  * exported from a `'use server'` module is sufficient to register it; there is

@@ -39,7 +39,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           .from('game_logs')
           .select('game_id, created_at')
           .order('created_at', { ascending: false })
-          .limit(2000),
+          // PostgREST caps a response at `db-max-rows` (1000 by default) and truncates
+// silently, so the previous `.limit(2000)` returned at most 1000 while looking
+// like a deliberate 2000. The sitemap therefore only ever published the games
+// covered by the most recent 1000 logs.
+.limit(1000),
         // `updated_at` is absent on a database created from an older revision
         // of 001, which failed the whole query with
         // "column lists.updated_at does not exist" and silently dropped every

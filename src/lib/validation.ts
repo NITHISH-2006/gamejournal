@@ -12,6 +12,9 @@ export class ValidationError extends Error {
 export const LIMITS = {
   usernameMin: 3,
   usernameMax: 20,
+  /** Supabase's own default minimum. Previously a bare `6` duplicated across
+   *  AuthButton and the new reset page. */
+  passwordMin: 6,
   displayNameMax: 50,
   bioMax: 280,
   reviewMax: 2000,
@@ -75,14 +78,29 @@ export function validateBio(value: unknown): string | null {
   return bio.length ? bio : null;
 }
 
+/**
+ * 0 is allowed, and means "logged but not rated".
+ *
+ * Migrations 002 and 003 both set `rating NOT NULL DEFAULT 0` with a
+ * `between 0 and 10` check, precisely because every TypeScript type, the RPCs
+ * and the UI all treat the column as a plain number — a NULL used to render the
+ * literal text "null/10". But the validator rejected 0, which made the schema's
+ * documented "logged but unrated" state unreachable from the application: every
+ * log was rated, and the `rating > 0` filters in `get_game_stats`,
+ * `get_top_rated_games`, `get_trending_games` and the leaderboard transfer
+ * were all built around a state the app could never produce.
+ *
+ * Aligning the validator with the schema is what makes "log it now, rate it
+ * later" possible — the thing most trackers are actually for.
+ */
 export function validateRating(value: unknown): number {
   const rating = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(rating)) {
     throw new ValidationError('Pick a rating from 1 to 10.');
   }
   const rounded = Math.round(rating);
-  if (rounded < 1 || rounded > 10) {
-    throw new ValidationError('Rating must be between 1 and 10.');
+  if (rounded < 0 || rounded > 10) {
+    throw new ValidationError('Rating must be between 0 and 10.');
   }
   return rounded;
 }

@@ -5,7 +5,7 @@ import { createNotification } from '@/lib/notify';
 import { enforce } from '@/lib/rate-limit';
 import { callerKey } from '@/lib/limiter';
 import { validateComment, validateUuid } from '@/lib/validation';
-import { revalidateAll } from '@/lib/revalidate';
+import { revalidateLogPaths } from '@/lib/revalidate';
 
 export type Comment = {
   id: string;
@@ -51,7 +51,7 @@ export async function getComments(logId: unknown): Promise<Comment[]> {
   // key's generated name cannot take the whole thread down.
   const authorIds = [...new Set(rows.map((r) => r.user_id as string))];
   // The error was previously discarded, so a transient failure attributed every
-  // comment in the thread to a user called "unknown" — a real person's comment
+  // comment in the thread to a user called "unknown" â€” a real person's comment
   // credited to a stranger, with nothing in the log to explain it.
   const { data: authors, error: authorError } = await supabase
     .from('profiles')
@@ -93,7 +93,7 @@ export async function addComment(
   body: unknown
 ): Promise<{ id: string }> {
   const user = await requireUser();
-  await enforce(await callerKey('comment:write'), 20, 60_000);
+  await enforce(await callerKey('comment:write', user.id), 20, 60_000);
 
   const id = validateUuid(logId, 'log id');
   const text = validateComment(body);
@@ -128,7 +128,7 @@ export async function addComment(
     ).catch(() => {});
   }
 
-  revalidateAll();
+  revalidateLogPaths(user.id, (log as { game_id?: number | null }).game_id ?? 0);
   return { id: data.id as string };
 }
 
@@ -164,7 +164,7 @@ export async function getCommentsForLogs(
 
   const authorIds = [...new Set(rows.map((r) => r.user_id as string))];
   // The error was previously discarded, so a transient failure attributed every
-  // comment in the thread to a user called "unknown" — a real person's comment
+  // comment in the thread to a user called "unknown" â€” a real person's comment
   // credited to a stranger, with nothing in the log to explain it.
   const { data: authors, error: authorError } = await supabase
     .from('profiles')
@@ -208,7 +208,7 @@ export async function getCommentsForLogs(
 
 export async function deleteComment(commentId: unknown): Promise<void> {
   const user = await requireUser();
-  await enforce(await callerKey('comment:write'), 30, 60_000);
+  await enforce(await callerKey('comment:write', user.id), 30, 60_000);
 
   const id = validateUuid(commentId, 'comment id');
   const supabase = await createClient();
@@ -220,5 +220,20 @@ export async function deleteComment(commentId: unknown): Promise<void> {
     .eq('user_id', user.id);
 
   if (error) throw new Error(error.message);
-  revalidateAll();
+
+  // Resolve the parent log's game so only the affected page is invalidated.
+  // Both comment mutations previously called `revalidateAll()`, so a single
+  // 1–1000 character comment on one log invalidated every ISR route in the
+  // application: the feed, every game page, every profile, every list and the
+  // sitemap.
+  const { data: parent } = await supabase
+    .from('comments')
+    .select('log_id, game_logs ( game_id )')
+    .eq('id', id)
+    .maybeSingle();
+
+  const gameId = (parent as { game_logs?: { game_id?: number } | null } | null)
+    ?.game_logs?.game_id;
+
+  revalidateLogPaths(user.id, gameId ?? 0);
 }

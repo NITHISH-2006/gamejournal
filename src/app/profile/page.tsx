@@ -41,7 +41,11 @@ type ProfileLog = {
   created_at: string;
   diary_date: string | null;
   tags: string[] | null;
-  has_spoilers?: boolean | null;
+  // NOT NULL DEFAULT false. Non-optional on purpose — see the note in
+  // `user/[username]/page.tsx`: when this was optional, leaving it out of the
+  // select was a type error the compiler could not report, and the symptom was
+  // spoiler reviews rendering in the open.
+  has_spoilers: boolean;
   is_favorite?: boolean | null;
   playtime_hours?: number | null;
   games: { name: string; cover_url?: string | null } | null;
@@ -56,7 +60,7 @@ export default async function ProfilePage() {
     supabase
       .from('game_logs')
       .select(
-        'id, game_id, status, rating, review, created_at, diary_date, tags, is_favorite, playtime_hours, games ( name, cover_url )'
+        'id, game_id, status, rating, review, created_at, diary_date, tags, is_favorite, has_spoilers, playtime_hours, games ( name, cover_url )'
       )
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })

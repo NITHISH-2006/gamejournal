@@ -58,7 +58,14 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, 'max-image-preview': 'large' },
   },
-  alternates: { canonical: '/' },
+  // NO root-level `alternates.canonical`.
+  //
+  // Next merges metadata field-by-field down the tree, so a canonical declared
+  // here is inherited by every route that does not declare its own. `/profile`
+  // declares only `robots: { index: false }`, so it was emitting
+  // `<link rel="canonical" href="https://site/">` — telling search engines the
+  // private dashboard lives at the site root. Each page sets its own canonical
+  // where one is meaningful, and `metadataBase` above resolves relative ones.
   formatDetection: { telephone: false },
 };
 

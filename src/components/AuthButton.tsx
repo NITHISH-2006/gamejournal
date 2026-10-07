@@ -64,10 +64,39 @@ export default function AuthButton({
   // session is established by /auth/callback *after* the page has rendered, so
   // the user was left looking at a signed-out page with no way forward.
   useEffect(() => {
+    // `/auth/error` links here with `?signin=1` so "Sign in again" actually
+    // reopens the dialog. The previous version pointed both of its buttons at
+    // `/`, so the CTA was a second link to the same place under a different
+    // label and the user had to hunt for the navbar trigger.
+    if (user) return;
+    if (new URLSearchParams(window.location.search).get('signin') !== '1') return;
+
+    // Strip the parameter first so a refresh or Back does not re-trigger it.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('signin');
+    window.history.replaceState(null, '', url.toString());
+
+    // Deferred to the next frame rather than set synchronously in the effect
+    // body: React 19 flags a synchronous setState there as a cascading render.
+    // Same pattern as `LogGameModal`'s `?log=1` handling.
+    const id = requestAnimationFrame(() => setOpen(true));
+    return () => cancelAnimationFrame(id);
+  }, [user]);
+
+  useEffect(() => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+      // `PASSWORD_RECOVERY` was previously absent. The recovery session is
+      // established by `/auth/callback` *after* the page has rendered, so
+      // without this the server-rendered tree never learns the user is signed
+      // in.
+      if (
+        event === 'SIGNED_IN' ||
+        event === 'SIGNED_OUT' ||
+        event === 'TOKEN_REFRESHED' ||
+        event === 'PASSWORD_RECOVERY'
+      ) {
         // `getSession()` inside the callback can deadlock, so only the event
         // is used here.
         if (event === 'SIGNED_OUT') {
@@ -113,10 +142,11 @@ export default function AuthButton({
         }
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(
           email.trim(),
-          // Must land on the callback route, not `/` — the PKCE code is only
-          // exchanged there. `/` would sign the user in silently and leave them
-          // with no way to actually choose a new password.
-          { redirectTo: `${window.location.origin}/auth/callback` }
+          // Must land on the callback route first — that is the only place the
+          // PKCE code can be exchanged for a session. `next` then carries the
+          // user on to the password form, so they actually get to choose a new
+          // password instead of being silently signed in on their old one.
+          { redirectTo: `${window.location.origin}/auth/callback?next=/auth/update-password` }
         );
         if (resetError) {
           setError(resetError.message);
@@ -160,8 +190,8 @@ export default function AuthButton({
         );
         return;
       }
-      if (password.length < 6) {
-        setError('Password must be at least 6 characters.');
+      if (password.length < LIMITS.passwordMin) {
+        setError(`Password must be at least ${LIMITS.passwordMin} characters.`);
         return;
       }
 
@@ -346,12 +376,16 @@ export default function AuthButton({
                 <Input
                   id="password"
                   type="password"
-                  placeholder={mode === 'signup' ? 'At least 6 characters' : 'Your password'}
+                  placeholder={
+                    mode === 'signup'
+                      ? `At least ${LIMITS.passwordMin} characters`
+                      : 'Your password'
+                  }
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
                   required
-                  minLength={6}
+                  minLength={LIMITS.passwordMin}
                   autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                   className="pl-10"
                 />

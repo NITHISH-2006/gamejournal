@@ -448,9 +448,23 @@ export default function LogGameModal({
               <div className="flex flex-wrap items-center gap-3">
                 <StarInput value={rating} onChange={setRating} />
                 <span className="text-lg font-bold tabular-nums">
-                  {rating}
+                  {rating > 0 ? rating : '--'}
                   <span className="text-sm font-normal text-muted-foreground">/10</span>
                 </span>
+                {/* Rating 0 means "logged but not yet rated" — the schema's
+                    documented meaning for a 0. Without this control the state
+                    was unreachable: the modal defaulted to 8 and the stars could
+                    only ever go up, so every log was rated. Rating something
+                    before you have finished it is the single most common way
+                    trackers get abandoned. */}
+                <button
+                  type="button"
+                  onClick={() => setRating(0)}
+                  aria-pressed={rating === 0}
+                  className="rounded-md px-1.5 py-0.5 text-[0.65rem] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline aria-pressed:text-foreground"
+                >
+                  {rating === 0 ? 'Not rated yet' : 'Clear rating'}
+                </button>
               </div>
               <p className="mt-1 text-[0.65rem] text-muted-foreground">
                 Use arrow keys or number keys to rate.

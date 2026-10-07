@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { createClient } from '@/lib/supabase';
 import { getOwnProfile } from '@/app/actions/profiles';
 import { getUnreadCount } from '@/app/actions/notifications';
@@ -90,7 +91,17 @@ export default async function Navbar() {
             )}
 
             {user && <NotificationBell initialUnread={unread} />}
-            {user && <LogGameModal />}
+
+            {/* `LogGameModal` calls `useSearchParams()` to read `?log=1`. Without
+                a `<Suspense>` boundary above it, Next.js cannot statically render
+                the page and opts the whole route out of server rendering. It is
+                mounted from the root layout, so this boundary protects every route
+                in the app, not just the game pages. */}
+            {user && (
+              <Suspense fallback={null}>
+                <LogGameModal />
+              </Suspense>
+            )}
 
             {profile ? (
               <Link

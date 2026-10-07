@@ -11,7 +11,6 @@ import {
   CalendarDays,
   Loader2,
   Share2,
-  Copy,
   Check,
   Flame,
   Activity,
@@ -41,12 +40,6 @@ const MODES: { value: FeedMode; label: React.ReactNode }[] = [
   { value: 'trending', label: 'Trending' },
 ];
 
-/** Extract the log id from a /api/og/log/<id> share URL. */
-function logIdFromUrl(url: string): string | null {
-  const m = url.match(/\/api\/og\/log\/([0-9a-f-]{36})/i);
-  return m ? m[1] : null;
-}
-
 export default function ActivityFeed({
   currentUserId,
   initialLogs,
@@ -64,7 +57,7 @@ export default function ActivityFeed({
    *     the home page, so it hydrates as part of a *streamed, deferred* subtree.
    *     Firing a Server Action from a `useEffect` during that hydration threw
    *     "An unexpected response was received from the server" every time, and
-   *     the action body never even executed — confirmed by instrumenting
+   *     the action body never even executed â€” confirmed by instrumenting
    *     `getFeedData`, which logged nothing while the client reported failure.
    *
    *  2. Even when it worked, the app's main content surface was 100%
@@ -96,12 +89,17 @@ export default function ActivityFeed({
   const { toast } = useToast();
 
   const loadLikes = useCallback(async (rows: FeedLog[]) => {
-    if (!rows.length) {
-      setLikes({});
-      return;
-    }
+    if (!rows.length) return;
+
     const map = await getLikesForLogs(rows.map((l) => l.id)).catch(() => ({}));
-    setLikes(map);
+    // Merge, never replace.
+    //
+    // `rows` is only the page just fetched. Calling `setLikes(map)` meant that
+    // after "Load more" the map held the new page alone, and the render below
+    // falls back to `{ count: 0, likedByMe: false }` for anything missing â€” so
+    // every previously-loaded post snapped back to zero likes with an unfilled
+    // heart, including posts the user had liked themselves.
+    setLikes((prev) => ({ ...prev, ...map }));
   }, []);
 
   const fetchPage = useCallback(
@@ -132,7 +130,7 @@ export default function ActivityFeed({
     [loadLikes, toast]
   );
 
-  // Reload when the tab changes — but NOT on mount, because the server has
+  // Reload when the tab changes â€” but NOT on mount, because the server has
   // already supplied the `global` page. Firing an action on mount is what
   // produced the "unexpected response" failure, and it also threw away the
   // server-rendered content and replaced it with a skeleton.
@@ -184,8 +182,15 @@ export default function ActivityFeed({
   };
 
   const handleShare = async (log: FeedLog) => {
-    const shareUrl = `${window.location.origin}/api/og/log/${log.id}`;
-    const id = logIdFromUrl(shareUrl) ?? log.id;
+    // Share the game's page, not the card image.
+    //
+    // `/api/og/log/<uuid>` is the OG *asset*: a PNG that exists so that a link
+    // to the page unfurls with a preview. Handing that URL to a human gave them
+    // a link to an image file â€” pasted into Discord it unfurls as an
+    // image-of-an-image, pasted into a browser it renders a bare PNG, and there
+    // is no permalink for an individual log anywhere in the app.
+    const shareUrl = `${window.location.origin}/game/${log.game_id}`;
+    const id = log.id;
 
     try {
       if (navigator.share) {
@@ -298,7 +303,7 @@ export default function ActivityFeed({
                               @{log.username}
                             </Link>
                           )}
-                          {log.username && <span aria-hidden="true">·</span>}
+                          {log.username && <span aria-hidden="true">Â·</span>}
                           <span className="inline-flex items-center gap-1">
                             <CalendarDays className="size-3" aria-hidden="true" />
                             {formatDate(log.diary_date ?? log.created_at)}
@@ -316,9 +321,11 @@ export default function ActivityFeed({
                         >
                           {sharedId === log.id || copiedId === log.id ? (
                             <Check className="size-3.5 text-emerald-400" />
-                          ) : copiedId === log.id ? (
-                            <Copy className="size-3.5" />
                           ) : (
+                            /* The intermediate `copiedId === log.id` arm was
+                               unreachable â€” that condition had already matched
+                               in the branch above â€” so the Copy icon never
+                               rendered at all. */
                             <Share2 className="size-3.5" />
                           )}
                         </button>

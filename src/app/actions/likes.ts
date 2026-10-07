@@ -13,7 +13,7 @@ export type LikeSummary = { count: number; likedByMe: boolean };
 /** Toggles a like on a log and returns the authoritative new state. */
 export async function toggleLike(logId: unknown): Promise<LikeSummary> {
   const user = await requireUser();
-  await enforce(await callerKey('like:write'), 120, 60_000);
+  await enforce(await callerKey('like:write', user.id), 120, 60_000);
 
   const id = validateUuid(logId, 'log id');
   const supabase = await createClient();
@@ -36,7 +36,7 @@ export async function toggleLike(logId: unknown): Promise<LikeSummary> {
   //
   // The projection is `'*'`, not `'id'`. `log_likes` is keyed on
   // `(user_id, log_id)` and only gained a surrogate `id` in migration 002, so
-  // `select('id')` fails with 42703 on a pre-002 database — and PostgREST
+  // `select('id')` fails with 42703 on a pre-002 database â€” and PostgREST
   // returns that with an *empty* message. The error went unchecked, so
   // `existingRows` was null, the toggle always took the INSERT branch, and
   // un-liking was impossible. Naming no column makes the read valid on both
@@ -98,10 +98,10 @@ export async function toggleLike(logId: unknown): Promise<LikeSummary> {
   return { count, likedByMe };
 }
 
-/** Idempotent "ensure liked". Not a toggle — see the note on `followUser`. */
+/** Idempotent "ensure liked". Not a toggle â€” see the note on `followUser`. */
 export async function likeLog(logId: unknown): Promise<LikeSummary> {
   const user = await requireUser();
-  await enforce(await callerKey('like:write'), 120, 60_000);
+  await enforce(await callerKey('like:write', user.id), 120, 60_000);
 
   const id = validateUuid(logId, 'log id');
   const supabase = await createClient();
@@ -128,7 +128,7 @@ export async function likeLog(logId: unknown): Promise<LikeSummary> {
  *  on a log you had not liked created the like. */
 export async function unlikeLog(logId: unknown): Promise<LikeSummary> {
   const user = await requireUser();
-  await enforce(await callerKey('like:write'), 120, 60_000);
+  await enforce(await callerKey('like:write', user.id), 120, 60_000);
 
   const id = validateUuid(logId, 'log id');
   const supabase = await createClient();

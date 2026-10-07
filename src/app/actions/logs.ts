@@ -1,7 +1,8 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidateLogPaths as revalidateShared } from '@/lib/revalidate';
 import { createClient, requireUser } from '@/lib/supabase';
+import type { Database } from '@/lib/database.types';
 import { getCapabilities } from '@/lib/capabilities';
 import { enforce } from '@/lib/rate-limit';
 import { callerKey } from '@/lib/limiter';
@@ -46,7 +47,7 @@ export type SaveLogResult = {
  */
 export async function saveGameLog(input: SaveLogInput): Promise<SaveLogResult> {
   const user = await requireUser();
-  await enforce(await callerKey('log:write'), 30, 60_000);
+  await enforce(await callerKey('log:write', user.id), 30, 60_000);
 
   const game = validateGamePayload(input.game);
   const status = validateStatus(input.status);
@@ -162,7 +163,7 @@ export async function updateGameLog(
   }
 ): Promise<{ success: true }> {
   const user = await requireUser();
-  await enforce(await callerKey('log:update'), 60, 60_000);
+  await enforce(await callerKey('log:update', user.id), 60, 60_000);
 
   const id = validateUuid(logId, 'log id');
   const caps = await getCapabilities();
@@ -178,7 +179,9 @@ export async function updateGameLog(
 
   if (!existing) throw new Error('That log does not exist or is not yours.');
 
-  const update: Record<string, unknown> = {};
+  // Typed as the table's `Update` shape rather than `Record<string, unknown>`
+  // so a field that is not a real column is a compile error.
+  const update: Database['public']['Tables']['game_logs']['Update'] = {};
   if (patch.status !== undefined) update.status = validateStatus(patch.status);
   if (patch.rating !== undefined) update.rating = validateRating(patch.rating);
   if (patch.review !== undefined) update.review = validateReview(patch.review);
@@ -209,7 +212,7 @@ export async function updateGameLog(
 /** Deletes a log. Ownership is enforced. */
 export async function deleteGameLog(logId: unknown): Promise<{ success: true }> {
   const user = await requireUser();
-  await enforce(await callerKey('log:delete'), 30, 60_000);
+  await enforce(await callerKey('log:delete', user.id), 30, 60_000);
 
   const id = validateUuid(logId, 'log id');
   const supabase = await createClient();
@@ -233,16 +236,13 @@ export async function deleteGameLog(logId: unknown): Promise<{ success: true }> 
 /**
  * Invalidates every surface that displays this log.
  *
- * Previously only '/' and `/game/${id}` were revalidated, so the profile and
- * list pages kept serving stale data.
+ * Now delegates to the shared helper in `lib/revalidate`, which is also what the
+ * list and watchlist writes use. `userId` is accepted for call-site readability
+ * but deliberately unused: the tree invalidation is by path, not by identity.
  */
 function revalidateLogPaths(userId: string, gameId: number): void {
-  revalidatePath('/', 'layout');
-  revalidatePath(`/game/${gameId}`);
-  revalidatePath('/profile');
-  revalidatePath('/discover');
-  revalidatePath(`/api/og/log`);
   void userId;
+  revalidateShared(userId, gameId);
 }
 
 /** Translates raw Postgres/PostgREST messages into something a user can read. */

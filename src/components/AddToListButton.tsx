@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import {
   addGameToList,
   removeGameFromList,
@@ -40,13 +40,23 @@ export default function AddToListButton({ gameId, gameName, lists }: Props) {
   const [viewing, setViewing] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // A ref, not the `pending` state.
+  //
+  // `useTransition` does not update `pending` synchronously, so two clicks in
+  // the same frame both passed `if (pending) return`. The result was a genuine
+  // race: `addGameToList` and `removeGameFromList` fired concurrently and the
+  // net effect was a no-op, with a success toast for each. This is the same
+  // guard `AuthButton` already uses.
+  const busy = useRef(false);
+
   const isInList = (list: ListItem) =>
     list.list_games.some((lg) => lg.game_id === gameId);
 
   const toggle = (list: ListItem) => {
-    if (pending) return;
+    if (busy.current) return;
     const inList = isInList(list);
 
+    busy.current = true;
     startTransition(async () => {
       try {
         if (inList) {
@@ -72,23 +82,34 @@ export default function AddToListButton({ gameId, gameName, lists }: Props) {
         }
       } catch (err) {
         toast((err as Error).message ?? 'Could not update that list', 'error');
+      } finally {
+        busy.current = false;
       }
     });
   };
 
+  // Both of these previously had no guard at all, so a burst of clicks fired
+  // overlapping deletes / visibility flips.
   const handleDelete = (list: ListItem) => {
+    if (busy.current) return;
+    busy.current = true;
     startTransition(async () => {
       try {
         await deleteList(list.id);
         setLocalLists((prev) => prev.filter((l) => l.id !== list.id));
+        setViewing((v) => (v === list.id ? null : v));
         toast(`Deleted "${list.name}"`);
       } catch (err) {
         toast((err as Error).message ?? 'Could not delete that list', 'error');
+      } finally {
+        busy.current = false;
       }
     });
   };
 
   const handleVisibility = (list: ListItem) => {
+    if (busy.current) return;
+    busy.current = true;
     startTransition(async () => {
       try {
         await updateList(list.id, { isPublic: !list.is_public });
@@ -98,6 +119,8 @@ export default function AddToListButton({ gameId, gameName, lists }: Props) {
         toast(list.is_public ? 'List is now private' : 'List is now public');
       } catch (err) {
         toast((err as Error).message ?? 'Could not update visibility', 'error');
+      } finally {
+        busy.current = false;
       }
     });
   };
@@ -184,7 +207,16 @@ export default function AddToListButton({ gameId, gameName, lists }: Props) {
 
                   <button
                     type="button"
-                    onClick={() => setViewing(list.id)}
+                    onClick={() => {
+                      // Close the picker before opening the detail view.
+                      //
+                      // Both dialogs were mounted at once otherwise: two overlays
+                      // stacked, two `FocusScope`s fighting over focus, and the
+                      // second marking the first `aria-hidden` while it still
+                      // looked present.
+                      setOpen(false);
+                      setViewing(list.id);
+                    }}
                     className="rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                   >
                     View

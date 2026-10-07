@@ -1,5 +1,6 @@
 import { createPublicClient } from '@/lib/supabase';
 import { validateGameId } from '@/lib/validation';
+import { exactCount } from '@/lib/count';
 import { ImageResponse } from 'next/og';
 
 /**
@@ -9,6 +10,21 @@ import { ImageResponse } from 'next/og';
 export const runtime = 'edge';
 
 const CACHE = 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400';
+
+/**
+ * Errors must never carry `CACHE`.
+ *
+ * A 404 or a transient database error cached under `s-maxage=604800` is stored
+ * at the CDN for a week, so a game that is added later still unfurls as "Not
+ * found" and one Supabase blip becomes a permanently broken preview. The
+ * earlier version of this file built one `headers` object and reused it for
+ * both the success and the failure path, which is how that happened.
+ */
+function errorResponse(body: string, status: number, headers: Headers): Response {
+  headers.set('Cache-Control', 'no-store');
+  headers.set('Content-Type', 'text/plain; charset=utf-8');
+  return new Response(body, { status, headers });
+}
 
 export async function GET(
   _req: Request,
@@ -28,17 +44,26 @@ export async function GET(
       .single();
 
     if (!game) {
-      return new Response('Not found', { status: 404, headers });
+      return errorResponse('Not found', 404, headers);
     }
 
-    const [{ count: logCount }, { data: agg }] = await Promise.all([
-      supabase
-        .from('game_logs')
-        .select('id', { count: 'exact', head: true })
-        .eq('game_id', gameId),
+    // `exactCount` selects `'*'` and checks the error. The previous inline
+    // `select('id', { count: 'exact', head: true })` destructured `count`
+    // without ever looking at `error`, so a failed query rendered as a
+    // factual-looking "0 players have logged this".
+    const [logCount, aggResult] = await Promise.all([
+      exactCount(
+        (sel) =>
+          supabase
+            .from('game_logs')
+            .select(sel, { count: 'exact', head: true })
+            .eq('game_id', gameId),
+        `og.game.logCount.${gameId}`
+      ),
       supabase.rpc('get_game_stats', { p_game_id: gameId }),
     ]);
 
+    const agg = 'data' in aggResult ? aggResult.data : null;
     const row = (Array.isArray(agg) ? agg[0] : agg) as
       | { avg_rating: number | string | null; rating_count: number | string | null }
       | undefined;
@@ -170,7 +195,7 @@ export async function GET(
                 a single string is the more robust fix — one child, so the
                 constraint cannot be violated. */}
             <div style={{ color: '#71717a', fontSize: 22, marginTop: 4 }}>
-              {`${logCount ?? 0} ${logCount === 1 ? 'player has' : 'players have'} logged this${
+              {`${logCount} ${logCount === 1 ? 'player has' : 'players have'} logged this${
                 ratingCount > 0 ? ` · ${ratingCount} ratings` : ''
               }`}
             </div>
@@ -181,6 +206,6 @@ export async function GET(
     );
   } catch (err) {
     console.error('[og:game] failed to render card:', err);
-    return new Response('Error generating image', { status: 500, headers });
+    return errorResponse('Error generating image', 500, headers);
   }
 }

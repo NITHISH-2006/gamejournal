@@ -2,6 +2,8 @@
 
 import { createPublicClient } from '@/lib/supabase';
 import { validateUuid } from '@/lib/validation';
+import { enforce } from '@/lib/rate-limit';
+import { callerKey } from '@/lib/limiter';
 
 /**
  * Player analytics for the profile page.
@@ -15,6 +17,14 @@ import { validateUuid } from '@/lib/validation';
  *
  * `get_user_activity_stats` is one row-returning function, so the whole
  * dashboard strip is a single round trip.
+ *
+ * Every action in this file is rate limited. They read public data, so this is
+ * not about confidentiality — it is that all four are genuinely expensive
+ * (`get_user_activity_stats` runs six CTEs including a window function over
+ * every distinct active day; `get_year_in_review` joins and aggregates three
+ * `jsonb_agg`s; `search_reviews` is a full-text scan over `review_tsv`), and
+ * a `'use server'` export is a publicly reachable POST endpoint. They were the
+ * only unmetered operations in an application where every *write* was limited.
  */
 
 export type ActivityStats = {
@@ -40,6 +50,7 @@ export async function getActivityStats(
   userId: unknown
 ): Promise<ActivityStats | null> {
   const id = validateUuid(userId, 'user id');
+  await enforce(await callerKey('stats:activity'), 60, 60_000);
 
   const supabase = createPublicClient();
   const { data, error } = await supabase.rpc('get_user_activity_stats', {
@@ -92,6 +103,7 @@ export async function getLogHistory(
 ): Promise<LogHistoryPoint[]> {
   const id = validateUuid(userId, 'user id');
   const span = Number.isFinite(months) ? Math.min(Math.max(months, 1), 36) : 12;
+  await enforce(await callerKey('stats:history'), 60, 60_000);
 
   const supabase = createPublicClient();
   const { data, error } = await supabase.rpc('get_user_log_history', {
@@ -140,6 +152,8 @@ export async function getYearInReview(
   year?: number
 ): Promise<YearInReview | null> {
   const id = validateUuid(userId, 'user id');
+  await enforce(await callerKey('stats:year'), 30, 60_000);
+
   const supabase = createPublicClient();
 
   const { data, error } = await supabase.rpc('get_year_in_review', {
@@ -193,6 +207,10 @@ export async function searchReviews(
 ): Promise<{ hits: SearchHit[]; nextCursor: { matchCount: number; gameId: number } | null }> {
   const q = String(query ?? '').trim();
   if (q.length < 2) return { hits: [], nextCursor: null };
+
+  // Tightest limit in the app: this is a full-text search and it is reachable
+  // without authentication.
+  await enforce(await callerKey('stats:search'), 20, 60_000);
 
   // 47, not 48. A probe row is requested as `p_limit: take + 1`, but the SQL
   // clamps to `least(p_limit, 48)`. With `take = 48` the request sent 49 and

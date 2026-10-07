@@ -13,7 +13,7 @@ export async function toggleFollow(
   targetUserId: unknown
 ): Promise<{ following: boolean; followers: number }> {
   const user = await requireUser();
-  await enforce(await callerKey('follow:write'), 60, 60_000);
+  await enforce(await callerKey('follow:write', user.id), 60, 60_000);
 
   const targetId = validateUuid(targetUserId, 'user id');
   if (targetId === user.id) throw new Error('You cannot follow yourself.');
@@ -37,7 +37,7 @@ export async function toggleFollow(
   // The projection is `'*'`, not `'id'`. `follows` is keyed on
   // `(follower_id, following_id)` and only gained a surrogate `id` in migration
   // 002. `select('id')` therefore fails with 42703 on a pre-002 database, and
-  // PostgREST reports that with an *empty* message — so with the error
+  // PostgREST reports that with an *empty* message â€” so with the error
   // unchecked, `existingRows` was null, the toggle always took the INSERT
   // branch, and unfollowing was impossible.
   const { data: existingRows, error: readError } = await supabase
@@ -73,7 +73,7 @@ export async function toggleFollow(
       if (error.code === '23505') {
         // `'*'` for the same reason as the read above: this re-read would also
         // 42703 on a pre-002 database, leaving `raced` null and turning the
-        // race into a thrown error with PostgREST's empty message — a blank
+        // race into a thrown error with PostgREST's empty message â€” a blank
         // error dialog for the user.
         const { data: raced, error: raceError } = await supabase
           .from('follows')
@@ -94,9 +94,14 @@ export async function toggleFollow(
           if (delErr) throw new Error(delErr.message);
           following = false;
         } else {
-          // The conflicting row belongs to someone else (a shared composite
-          // key is impossible, so this means the delete already won).
-          following = true;
+          // No row exists, so there is no follow edge in the database. A
+          // concurrent double-click raced: our INSERT hit the unique constraint
+          // because the paired DELETE had already removed the row, meaning the
+          // un-follow is what actually persisted.
+          //
+          // The previous value here was `true`, which rendered the button as
+          // "Following" for a follow that does not exist until the next refresh.
+          following = false;
         }
       } else {
         throw new Error(error.message);
@@ -128,12 +133,12 @@ export async function toggleFollow(
 
 /**
  * Explicit follow. Kept for callers that want an idempotent "ensure followed".
- * This is NOT a toggle — the previous version delegated to `toggleFollow`, so
+ * This is NOT a toggle â€” the previous version delegated to `toggleFollow`, so
  * calling it on someone you already followed *unfollowed* them.
  */
 export async function followUser(followingId: unknown): Promise<void> {
   const user = await requireUser();
-  await enforce(await callerKey('follow:write'), 60, 60_000);
+  await enforce(await callerKey('follow:write', user.id), 60, 60_000);
 
   const targetId = validateUuid(followingId, 'user id');
   if (targetId === user.id) throw new Error('You cannot follow yourself.');
@@ -155,7 +160,7 @@ export async function followUser(followingId: unknown): Promise<void> {
  */
 export async function unfollowUser(followingId: unknown): Promise<void> {
   const user = await requireUser();
-  await enforce(await callerKey('follow:write'), 60, 60_000);
+  await enforce(await callerKey('follow:write', user.id), 60, 60_000);
 
   const targetId = validateUuid(followingId, 'user id');
   const supabase = await createClient();

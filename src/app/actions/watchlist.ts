@@ -46,7 +46,7 @@ async function getOrCreateWatchlist(
     // through to the INSERT. That insert then violated
     // `lists_user_watchlist_uniq` (the row we failed to read is still there),
     // the recovery read failed too, and the user was told "Could not create
-    // your watchlist" — a write failure caused by a read blip, pointing at the
+    // your watchlist" â€” a write failure caused by a read blip, pointing at the
     // wrong thing. A read we could not complete is not evidence of absence.
     console.error('[watchlist] lookup error:', readError.message);
     throw new Error('Could not check your watchlist. Please try again.');
@@ -89,7 +89,7 @@ async function findWatchlistId(
   userId: string
 ): Promise<string | null> {
   // A failed read used to return null, which callers read as "no watchlist
-  // yet" — so `toggleWatchlist` went on to create one, and the membership
+  // yet" â€” so `toggleWatchlist` went on to create one, and the membership
   // check reported every game as absent. Distinguishing the two is the whole
   // point of this function.
   const { data, error } = await supabase
@@ -110,7 +110,7 @@ async function findWatchlistId(
 
 export async function toggleWatchlist(game: unknown): Promise<{ inWatchlist: boolean }> {
   const user = await requireUser();
-  await enforce(await callerKey('watchlist:write'), 60, 60_000);
+  await enforce(await callerKey('watchlist:write', user.id), 60, 60_000);
 
   const parsed = validateGamePayload(game);
   const gid = validateGameId(parsed.id);

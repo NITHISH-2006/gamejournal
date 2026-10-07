@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase';
+import { exactCount } from '@/lib/count';
 import type { UserNotification } from '@/lib/types';
 import { validateUuid } from '@/lib/validation';
 import { announceDegraded } from '@/lib/schema-notice';
@@ -113,17 +114,19 @@ export async function getUnreadCount(): Promise<number> {
   } = await supabase.auth.getUser();
   if (!user) return 0;
 
-  const { count, error } = await supabase
-    .from('notifications')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .eq('read', false);
-
-  if (error) {
-    console.error('[notifications] unread count error:', error.message);
-    return 0;
-  }
-  return count ?? 0;
+// Via `exactCount`, like every other count in the codebase. This was the last
+  // hand-rolled `select(…, { count: 'exact', head: true })`: it destructured
+  // `count` without checking `error`, so a permission blip rendered as a
+  // confident "0 unread" on the bell badge rather than an error.
+  return exactCount(
+    (sel) =>
+      supabase
+        .from('notifications')
+        .select(sel, { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('read', false),
+    'notifications.unread'
+  );
 }
 
 /**

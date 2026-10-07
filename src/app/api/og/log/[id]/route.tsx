@@ -1,4 +1,6 @@
 import { createPublicClient } from '@/lib/supabase';
+import { validateUuid } from '@/lib/validation';
+import { safeCoverUrl } from '@/lib/images';
 import { ImageResponse } from 'next/og';
 
 /**
@@ -7,12 +9,28 @@ import { ImageResponse } from 'next/og';
  * Notes on reliability:
  *  - Responses are cached publicly for a week with stale-while-revalidate, so
  *    a link shared into a chat app is not regenerated on every crawler hit.
+ *  - Only *successful* renders are cached. An error response carries
+ *    `no-store`, because caching a 404 for seven days means a log that is
+ *    created later still unfurls as "Not found" for a week, and a transient
+ *    database error becomes a permanently broken preview.
  *  - Remote cover art is fetched with a short timeout and the card still
  *    renders if the fetch fails, rather than returning a 500.
  *  - Only text and a known-shape image are rendered, so a hostile review
  *    string cannot inject markup.
+ *  - A review the author marked as a spoiler is never rendered here. This
+ *    image is public and cached, so leaking one is irreversible.
  */
 export const runtime = 'edge';
+
+/**
+ * Errors must never be cached under the success cache headers, or a transient
+ * failure becomes a sticky 404 for the full `s-maxage`.
+ */
+function errorResponse(body: string, status: number, headers: Headers): Response {
+  headers.set('Cache-Control', 'no-store');
+  headers.set('Content-Type', 'text/plain; charset=utf-8');
+  return new Response(body, { status, headers });
+}
 
 export async function GET(
   _req: Request,
@@ -20,39 +38,75 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  let cacheSeconds = 604800; // 7 days
+  const cacheSeconds = 604800; // 7 days
   const headers = new Headers({
     'Content-Type': 'image/png',
     'Cache-Control': `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}, stale-while-revalidate=86400`,
   });
 
+  // Validated before touching the database. `id` arrives from the URL, and
+  // `.eq('id', <not a uuid>)` makes PostgREST reject the whole request.
+  if (!validateUuid(id)) {
+    return errorResponse('Bad request', 400, headers);
+  }
+
   try {
     const supabase = createPublicClient();
-    const { data: log, error } = await supabase
-      .from('game_logs')
-      .select('rating, status, review, created_at, games ( name, cover_url ), profiles ( username )')
-      .eq('id', id)
-      .single();
 
-    if (error || !log) {
-      return new Response('Not found', { status: 404, headers });
+    // Two projections, not one. The `profiles (username)` embed depends on a
+    // foreign key that a database predating migration 002 does not have, and a
+    // missing FK fails the *entire* PostgREST request — not just that column —
+    // so a single-projection query 404s every log on such a database. The
+    // username is only a label on the card, so dropping it is acceptable; the
+    // route must not depend on it.
+    let log: Record<string, unknown> | null = null;
+    let authorName: string | null = null;
+
+    const withAuthor = await supabase
+      .from('game_logs')
+      .select('rating, status, review, has_spoilers, created_at, games ( name, cover_url ), profiles ( username )')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!withAuthor.error && withAuthor.data) {
+      const row = withAuthor.data as Record<string, unknown>;
+      log = row;
+      const p = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+      authorName =
+        p && typeof (p as { username?: unknown }).username === 'string'
+          ? (p as { username: string }).username
+          : null;
+    } else {
+      const withoutAuthor = await supabase
+        .from('game_logs')
+        .select('rating, status, review, has_spoilers, created_at, games ( name, cover_url )')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (withoutAuthor.error || !withoutAuthor.data) {
+        return errorResponse('Not found', 404, headers);
+      }
+      log = withoutAuthor.data as Record<string, unknown>;
     }
 
-    const game = Array.isArray(log.games) ? log.games[0] : log.games;
-    const profile = Array.isArray(log.profiles) ? log.profiles[0] : log.profiles;
+    if (!log) return errorResponse('Not found', 404, headers);
+
+    const game = (Array.isArray(log.games) ? log.games[0] : log.games) as
+      | { name?: string | null; cover_url?: string | null }
+      | null;
 
     const rating = Number(log.rating ?? 0);
     const stars = '★'.repeat(Math.max(0, Math.min(5, Math.round(rating / 2)))) +
       '☆'.repeat(Math.max(0, 5 - Math.max(0, Math.min(5, Math.round(rating / 2)))));
 
-    // Only permit IGDB-style https image URLs to be embedded.
-    const cover =
-      typeof game?.cover_url === 'string' && game.cover_url.startsWith('https://')
-        ? game.cover_url
-        : null;
+    // Allow-listed exactly as `next/image` is configured. An arbitrary https
+    // host would turn this route into an open fetch proxy.
+    const cover = safeCoverUrl(game?.cover_url);
 
+    // A spoiler review is withheld from a public, week-cached image. There is
+    // no way to un-share one that has already been unfurled.
     const review =
-      typeof log.review === 'string' && log.review.trim().length > 0
+      !log.has_spoilers && typeof log.review === 'string' && log.review.trim().length > 0
         ? log.review.trim().slice(0, 180)
         : null;
 
@@ -141,7 +195,7 @@ export async function GET(
                   borderRadius: 999,
                 }}
               >
-                {log.status}
+                {typeof log.status === 'string' ? log.status : ''}
               </span>
             </div>
 
@@ -162,9 +216,9 @@ export async function GET(
               </div>
             )}
 
-            {profile?.username && (
+            {authorName && (
               <div style={{ color: '#71717a', fontSize: 20, marginTop: 6 }}>
-                @{profile.username}
+                @{authorName}
               </div>
             )}
           </div>
@@ -173,9 +227,8 @@ export async function GET(
       { width: 1200, height: 630, headers }
     );
   } catch (err) {
-    console.error('[og] failed to render card:', err);
-    cacheSeconds = 60;
-    headers.set('Cache-Control', `public, max-age=${cacheSeconds}`);
-    return new Response('Error generating image', { status: 500, headers });
+    console.error('[og/log] failed to render card:', err);
+    // No store: a transient failure must not be pinned for a week.
+    return errorResponse('Error generating image', 500, headers);
   }
 }

@@ -20,17 +20,27 @@ const SWEEP_INTERVAL_MS = 60_000;
 let lastSweep = 0;
 
 function sweep(now: number) {
-  // The previous guard was `store.size < MAX_KEYS && now - lastSweep < 60_000`.
-  // Once the store reached MAX_KEYS the first clause was permanently false,
-  // so the early return never fired again and *every* subsequent `hit()` did a
-  // full 10,000-entry scan plus a hard-cap eviction. The size check has no
-  // business short-circuiting the time check — evicting is cheap and rare.
-  if (now - lastSweep < SWEEP_INTERVAL_MS && store.size < MAX_KEYS) return;
+  // The two concerns are deliberately decoupled.
+  //
+  // An earlier version guarded with
+  //     store.size < MAX_KEYS && now - lastSweep < SWEEP_INTERVAL_MS
+  // on the theory that reordering the operands fixed it. It did not: `&&` is
+  // commutative, so once the store reached MAX_KEYS the first clause was
+  // permanently false, the early return never fired again, and *every*
+  // subsequent `hit()` walked all 10,000 entries plus a hard-cap eviction. The
+  // limiter then became a CPU amplifier precisely when it was needed most.
+  //
+  // Time alone decides when to sweep, so a saturated store costs one pass per
+  // minute instead of one per request.
+  if (now - lastSweep < SWEEP_INTERVAL_MS) return;
   lastSweep = now;
+
   for (const [key, entry] of store) {
     if (entry.resetAt <= now) store.delete(key);
   }
-  // Hard cap in case of a flood of distinct keys within one window.
+
+  // Hard cap, in case of a flood of distinct keys inside one window. Runs at
+  // most once per sweep interval.
   if (store.size > MAX_KEYS) {
     const excess = store.size - MAX_KEYS;
     let removed = 0;

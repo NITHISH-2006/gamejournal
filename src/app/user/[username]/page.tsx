@@ -58,7 +58,11 @@ type ProfileLog = {
   created_at: string;
   diary_date: string | null;
   tags: string[] | null;
-  has_spoilers?: boolean | null;
+  // NOT NULL DEFAULT false in the schema. Declared non-optional on purpose:
+  // when these were `has_spoilers?: boolean`, omitting the column from the
+  // select above type-checked cleanly and every spoiler-flagged review
+  // rendered in full on the public profile.
+  has_spoilers: boolean;
   is_favorite?: boolean | null;
   games: { name: string; cover_url?: string | null } | null;
 };
@@ -75,7 +79,7 @@ export default async function UserProfilePage({ params }: Params) {
   const [logsResult, followCounts, stats, lists] = await Promise.all([
     supabase
       .from('game_logs')
-      .select('id, game_id, status, rating, review, created_at, diary_date, tags, is_favorite, playtime_hours, games ( name, cover_url )')
+      .select('id, game_id, status, rating, review, created_at, diary_date, tags, is_favorite, has_spoilers, playtime_hours, games ( name, cover_url )')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .limit(100),
