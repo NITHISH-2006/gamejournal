@@ -98,58 +98,6 @@ export async function toggleLike(logId: unknown): Promise<LikeSummary> {
   return { count, likedByMe };
 }
 
-/** Idempotent "ensure liked". Not a toggle â€” see the note on `followUser`. */
-export async function likeLog(logId: unknown): Promise<LikeSummary> {
-  const user = await requireUser();
-  await enforce(await callerKey('like:write', user.id), 120, 60_000);
-
-  const id = validateUuid(logId, 'log id');
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from('log_likes')
-    .upsert(
-      { user_id: user.id, log_id: id },
-      { onConflict: 'user_id,log_id', ignoreDuplicates: true }
-    );
-  if (error) throw new Error(error.message);
-
-  const count = await exactCount(
-    (sel) =>
-      supabase
-        .from('log_likes')
-        .select(sel, { count: 'exact', head: true })
-        .eq('log_id', id),
-    'log_likes.count'
-  );
-  return { count, likedByMe: true };
-}
-
-/** Delete-only. The previous version delegated to `toggleLike`, so calling it
- *  on a log you had not liked created the like. */
-export async function unlikeLog(logId: unknown): Promise<LikeSummary> {
-  const user = await requireUser();
-  await enforce(await callerKey('like:write', user.id), 120, 60_000);
-
-  const id = validateUuid(logId, 'log id');
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from('log_likes')
-    .delete()
-    .eq('user_id', user.id)
-    .eq('log_id', id);
-  if (error) throw new Error(error.message);
-
-  const count = await exactCount(
-    (sel) =>
-      supabase
-        .from('log_likes')
-        .select(sel, { count: 'exact', head: true })
-        .eq('log_id', id),
-    'log_likes.count'
-  );
-  return { count, likedByMe: false };
-}
-
 /**
  * Batch like state for a set of logs.
  *
@@ -236,3 +184,11 @@ function isMissingFunction(message: string): boolean {
     m.includes('404')
   );
 }
+
+/**
+ * Removed: `likeLog`, `unlikeLog`.
+ *
+ * Neither had callers, but a 'use server' module registers *every* exported
+ * async function as a publicly reachable POST endpoint, with no way to opt
+ * one out. `toggleLike` is the supported entry point.
+ */

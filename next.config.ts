@@ -35,17 +35,11 @@ const nextConfig: NextConfig = {
   // `next/og` is used by the OG image routes.
   serverExternalPackages: [],
 
-  async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: [
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'DENY' },
-        ],
-      },
-    ];
-  },
+  // NOTE: security headers are set in `src/proxy.ts`, not here.
+  //
+  // They used to be declared in both places. `next.config.ts`'s `headers()` runs
+  // *after* the proxy, so the config value silently won — two sources of truth
+  // that happened to agree. Only the proxy sets them now.
 };
 
 export default nextConfig;

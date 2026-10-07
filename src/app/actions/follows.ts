@@ -131,67 +131,6 @@ export async function toggleFollow(
   return { following, followers: count };
 }
 
-/**
- * Explicit follow. Kept for callers that want an idempotent "ensure followed".
- * This is NOT a toggle â€” the previous version delegated to `toggleFollow`, so
- * calling it on someone you already followed *unfollowed* them.
- */
-export async function followUser(followingId: unknown): Promise<void> {
-  const user = await requireUser();
-  await enforce(await callerKey('follow:write', user.id), 60, 60_000);
-
-  const targetId = validateUuid(followingId, 'user id');
-  if (targetId === user.id) throw new Error('You cannot follow yourself.');
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from('follows')
-    .upsert(
-      { follower_id: user.id, following_id: targetId },
-      { onConflict: 'follower_id,following_id', ignoreDuplicates: true }
-    );
-  if (error) throw new Error(error.message);
-}
-
-/**
- * Explicit unfollow. Delete-only: the previous version delegated to
- * `toggleFollow`, so calling it on someone you did *not* follow created the
- * follow and fired a notification.
- */
-export async function unfollowUser(followingId: unknown): Promise<void> {
-  const user = await requireUser();
-  await enforce(await callerKey('follow:write', user.id), 60, 60_000);
-
-  const targetId = validateUuid(followingId, 'user id');
-  const supabase = await createClient();
-
-  // Resolve the username so the target's public page is revalidated, and so a
-  // well-formed-but-unknown id reports "That user does not exist." instead of
-  // surfacing a raw Postgres 23503 foreign-key violation.
-  const { data: target, error: targetError } = await supabase
-    .from('profiles')
-    .select('id, username')
-    .eq('id', targetId)
-    .maybeSingle();
-
-  if (targetError) throw new Error(targetError.message);
-  if (!target) throw new Error('That user does not exist.');
-
-  const { error } = await supabase
-    .from('follows')
-    .delete()
-    .eq('follower_id', user.id)
-    .eq('following_id', targetId);
-  if (error) throw new Error(error.message);
-
-  // Match `toggleFollow`: an unfollow through this path used to revalidate only
-  // the layout, so the *target's* public profile kept serving a stale follower
-  // count until ISR expired.
-  revalidatePath('/', 'layout');
-  revalidatePath('/discover');
-  revalidatePath(`/user/${target.username}`);
-}
-
 export async function getFollowCounts(userId: unknown) {
   const id = validateUuid(userId, 'user id');
   const supabase = await createClient();
@@ -216,24 +155,6 @@ export async function getFollowCounts(userId: unknown) {
   ]);
 
   return { followers, following };
-}
-
-export async function isFollowing(followingId: unknown): Promise<boolean> {
-  const id = validateUuid(followingId, 'user id');
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return false;
-
-  const { data } = await supabase
-    .from('follows')
-    .select('follower_id')
-    .eq('follower_id', user.id)
-    .eq('following_id', id)
-    .maybeSingle();
-
-  return Boolean(data);
 }
 
 /**
@@ -351,3 +272,11 @@ function unwrapProfile(value: unknown): FollowListEntry | null {
   if (!record || typeof record !== 'object') return null;
   return record as FollowListEntry;
 }
+
+/**
+ * Removed: `followUser`, `unfollowUser`, `isFollowing`.
+ *
+ * None had callers, but a 'use server' module registers *every* exported async
+ * function as a publicly reachable POST endpoint. `toggleFollow` is the
+ * supported entry point.
+ */

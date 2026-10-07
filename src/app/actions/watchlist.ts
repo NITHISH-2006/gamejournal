@@ -151,29 +151,13 @@ export async function toggleWatchlist(game: unknown): Promise<{ inWatchlist: boo
   return { inWatchlist: true };
 }
 
-export async function addToWatchlist(game: unknown): Promise<void> {
-  await toggleWatchlist(game);
-}
-
-export async function removeFromWatchlist(gameId: unknown): Promise<void> {
-  const user = await requireUser();
-  const gid = validateGameId(gameId);
-  const supabase = await createClient();
-
-  // Previously this called getOrCreateWatchlist(), which would *create* a
-  // watchlist purely as a side effect of removing a game from it.
-  const listId = await findWatchlistId(supabase, user.id);
-  if (!listId) return; // nothing to remove from
-
-  const { error } = await supabase
-    .from('list_games')
-    .delete()
-    .eq('list_id', listId)
-    .eq('game_id', gid);
-
-  if (error) throw new Error(error.message);
-  revalidateAll();
-}
+// `addToWatchlist` and `removeFromWatchlist` were deleted.
+//
+// They had no callers, but a `'use server'` module registers *every* exported
+// async function as a publicly reachable POST endpoint — there is no way to opt
+// one out. `addToWatchlist` was worse than dead: it delegated to
+// `toggleWatchlist`, so calling it on a game that was already watched REMOVED it.
+// A live endpoint whose behaviour was the opposite of its name.
 
 /** Watchlist membership for many games at once (single round trip). */
 export async function getWatchlistMembership(
@@ -218,8 +202,5 @@ export async function getWatchlistMembership(
   return result;
 }
 
-export async function isInWatchlist(gameId: unknown): Promise<boolean> {
-  const gid = validateGameId(gameId);
-  const membership = await getWatchlistMembership([gid]);
-  return membership[gid] ?? false;
-}
+// `isInWatchlist` was also deleted: no callers, and every caller that would want
+// it should use `getWatchlistMembership` for a whole page of games in one query.

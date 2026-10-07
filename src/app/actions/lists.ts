@@ -273,68 +273,11 @@ export async function updateList(
   return { success: true };
 }
 
-/** Adds a game to every list owned by a user (used by the watchlist flow). */
-export async function addGameToOwnedLists(
-  listIds: unknown[],
-  gameId: unknown
-): Promise<void> {
-  const user = await requireUser();
-  // The only mutating action in this file with no `enforce(...)`, unlike the
-  // four around it. It performs a bulk insert, so an unbounded caller could
-  // otherwise drive large writes.
-  await enforce(await callerKey('list:write', user.id), 60, 60_000);
-  const gid = validateGameId(gameId);
-  const ids = (listIds ?? [])
-    .map((v) => {
-      try {
-        return validateUuid(v, 'list id');
-      } catch {
-        return null;
-      }
-    })
-    .filter((v): v is string => v !== null)
-    .slice(0, 50);
-
-  if (!ids.length) return;
-
-  const supabase = await createClient();
-  const { data, error: ownershipError } = await supabase
-    .from('lists')
-    .select('id')
-    .eq('user_id', user.id)
-    .in('id', ids);
-
-  // Previously unchecked. On failure `owned` was empty, `insertable` was empty,
-  // and the function returned having done nothing at all â€” "add to all my
-  // lists" silently no-oped. A failed ownership check is not evidence that the
-  // caller owns nothing.
-  if (ownershipError) {
-    console.error('[lists] addGameToOwnedLists ownership check failed:', ownershipError.message);
-    throw new Error('Could not check which lists you own. Please try again.');
-  }
-
-  const owned = new Set((data ?? []).map((l) => l.id));
-  const insertable = ids.filter((v) => owned.has(v));
-  if (!insertable.length) return;
-
-  const { error } = await supabase
-    .from('list_games')
-    .insert(insertable.map((list_id) => ({ list_id, game_id: gid })));
-
-  // 23505 means the game was already on the list, which is the desired state.
-  if (error && error.code !== '23505') {
-    console.error('[lists] addGameToOwnedLists error:', error.message);
-    throw new Error('Could not add that game to your lists. Please try again.');
-  }
-}
-
 /**
- * Removed: `export { getCapabilities }`.
+ * Removed: `addGameToOwnedLists`.
  *
- * The comment claimed it was re-exported for the watchlist, but the watchlist
- * imports it from `@/lib/capabilities` and nothing imported it from here â€” so
- * this re-export existed only to turn a plain library function into a public
- * Server Action endpoint that runs a database probe on demand. Being `async` and
- * exported from a `'use server'` module is sufficient to register it; there is
- * no way to opt a single export out.
+ * It had no callers, but a `'use server'` module registers *every* exported
+ * async function as a publicly reachable POST endpoint, with no way to opt one
+ * out. This one performed a bulk insert across up to 50 caller-supplied list
+ * ids, so it was reachable attack surface with real write cost.
  */
