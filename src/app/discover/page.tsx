@@ -4,6 +4,7 @@ import { Search, Trophy, Users, Flame, Sparkles } from 'lucide-react';
 import { getTopRatedGames, getTrendingGames, getSiteStats } from '@/app/actions/discover';
 import UserSearch from '@/components/UserSearch';
 import ReviewSearch from '@/components/ReviewSearch';
+import GameBrowser from '@/components/GameBrowser';
 import { GameCover } from '@/components/ui-primitives';
 import { EmptyState, SectionHeader } from '@/components/EmptyState';
 
@@ -130,6 +131,10 @@ export default async function DiscoverPage() {
           )}
         </div>
       </section>
+
+      {/* Filterable browse. Everything anyone has logged, which the two
+          fixed leaderboards above could never show. */}
+      <GameBrowser />
 
       {/* Trending */}
       <section>
