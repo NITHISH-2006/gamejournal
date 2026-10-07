@@ -16,7 +16,7 @@ import type { LogStatus } from '@/lib/types';
  * counts beside each filter wrong.
  *
  * The filter state lives in the URL so a filtered view can be shared and survives
- * a refresh â€” the difference between a browser and a toy.
+ * a refresh — the difference between a browser and a toy.
  */
 
 const SORTS: { value: BrowseSort; label: string }[] = [
@@ -348,7 +348,7 @@ export default function GameBrowser() {
             {pending && (
               <p className="mb-2 flex items-center gap-1.5 text-xs text-ink-muted">
                 <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-                Updatingâ€¦
+                Updating…
               </p>
             )}
             <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
@@ -369,9 +369,9 @@ export default function GameBrowser() {
                       {hit.name}
                     </p>
                     <p className="text-[0.65rem] text-ink-faint">
-                      {hit.avgRating != null ? `${hit.avgRating.toFixed(1)}â˜… Â· ` : ''}
+                      {hit.avgRating != null ? `${hit.avgRating.toFixed(1)}★ · ` : ''}
                       {hit.logCount} {hit.logCount === 1 ? 'log' : 'logs'}
-                      {hit.releaseYear ? ` Â· ${formatYear(String(hit.releaseYear)) ?? hit.releaseYear}` : ''}
+                      {hit.releaseYear ? ` · ${formatYear(String(hit.releaseYear)) ?? hit.releaseYear}` : ''}
                     </p>
                   </a>
                 </li>

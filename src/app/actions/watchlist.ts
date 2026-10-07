@@ -46,7 +46,7 @@ async function getOrCreateWatchlist(
     // through to the INSERT. That insert then violated
     // `lists_user_watchlist_uniq` (the row we failed to read is still there),
     // the recovery read failed too, and the user was told "Could not create
-    // your watchlist" â€” a write failure caused by a read blip, pointing at the
+    // your watchlist" — a write failure caused by a read blip, pointing at the
     // wrong thing. A read we could not complete is not evidence of absence.
     console.error('[watchlist] lookup error:', readError.message);
     throw new Error('Could not check your watchlist. Please try again.');
@@ -89,7 +89,7 @@ async function findWatchlistId(
   userId: string
 ): Promise<string | null> {
   // A failed read used to return null, which callers read as "no watchlist
-  // yet" â€” so `toggleWatchlist` went on to create one, and the membership
+  // yet" — so `toggleWatchlist` went on to create one, and the membership
   // check reported every game as absent. Distinguishing the two is the whole
   // point of this function.
   const { data, error } = await supabase
@@ -154,7 +154,7 @@ export async function toggleWatchlist(game: unknown): Promise<{ inWatchlist: boo
 // `addToWatchlist` and `removeFromWatchlist` were deleted.
 //
 // They had no callers, but a `'use server'` module registers *every* exported
-// async function as a publicly reachable POST endpoint — there is no way to opt
+// async function as a publicly reachable POST endpoint � there is no way to opt
 // one out. `addToWatchlist` was worse than dead: it delegated to
 // `toggleWatchlist`, so calling it on a game that was already watched REMOVED it.
 // A live endpoint whose behaviour was the opposite of its name.

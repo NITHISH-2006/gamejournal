@@ -43,7 +43,7 @@ export default async function ActivityHeatmap({
  * Buckets activity into five levels.
  *
  * Thresholds are derived from the user's own maximum rather than fixed, because
- * a fixed scale makes an infrequent player see an entirely empty grid â€” which
+ * a fixed scale makes an infrequent player see an entirely empty grid — which
  * reads as inactivity rather than as a quiet but real pattern.
  */
 function bucketFor(value: number, max: number): 0 | 1 | 2 | 3 | 4 {

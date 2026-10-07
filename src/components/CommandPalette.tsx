@@ -32,7 +32,7 @@ type Result = UserResult | ActionResult;
 /**
  * Anything the palette can select. Both static actions and user hits are
  * normalised into this so rendering and keyboard navigation read the same
- * array â€” see the note on `items` below.
+ * array — see the note on `items` below.
  */
 type PaletteItem =
   | { kind: 'action'; id: string; label: string; href: string }
@@ -146,7 +146,7 @@ export default function CommandPalette() {
    * The previous version kept `staticActions` and user hits in two separate
    * branches while `onKeyDown` only ever read `results`. With an empty query
    * `results` is `[]`, so `ArrowDown` computed `Math.min(1, -1) === -1` and
-   * `Enter` did nothing â€” the palette's core value proposition, jumping to a
+   * `Enter` did nothing — the palette's core value proposition, jumping to a
    * page without a mouse, was broken. Rendering and keyboard navigation now
    * both derive from this single array, so they cannot disagree.
    *
@@ -314,11 +314,11 @@ export default function CommandPalette() {
 
           <div className="flex items-center gap-4 border-t border-white/8 px-4 py-2.5 text-[0.65rem] text-muted-foreground">
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-white/10 bg-white/5 px-1">â†‘â†“</kbd>
+              <kbd className="rounded border border-white/10 bg-white/5 px-1">↑↓</kbd>
               navigate
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-white/10 bg-white/5 px-1">â†µ</kbd>
+              <kbd className="rounded border border-white/10 bg-white/5 px-1">↵</kbd>
               select
             </span>
             <span className="ml-auto hidden items-center gap-1 sm:flex">

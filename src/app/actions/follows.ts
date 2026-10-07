@@ -37,7 +37,7 @@ export async function toggleFollow(
   // The projection is `'*'`, not `'id'`. `follows` is keyed on
   // `(follower_id, following_id)` and only gained a surrogate `id` in migration
   // 002. `select('id')` therefore fails with 42703 on a pre-002 database, and
-  // PostgREST reports that with an *empty* message â€” so with the error
+  // PostgREST reports that with an *empty* message — so with the error
   // unchecked, `existingRows` was null, the toggle always took the INSERT
   // branch, and unfollowing was impossible.
   const { data: existingRows, error: readError } = await supabase
@@ -73,7 +73,7 @@ export async function toggleFollow(
       if (error.code === '23505') {
         // `'*'` for the same reason as the read above: this re-read would also
         // 42703 on a pre-002 database, leaving `raced` null and turning the
-        // race into a thrown error with PostgREST's empty message â€” a blank
+        // race into a thrown error with PostgREST's empty message — a blank
         // error dialog for the user.
         const { data: raced, error: raceError } = await supabase
           .from('follows')

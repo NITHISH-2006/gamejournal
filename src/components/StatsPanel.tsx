@@ -102,8 +102,8 @@ export default async function StatsPanel({
                 {review.year} in review
               </h2>
               <p className="text-ink-muted text-sm">
-                {initials(review.gamesPlayed)} games Â·{' '}
-                {initials(review.gamesCompleted)} completed Â·{' '}
+                {initials(review.gamesPlayed)} games ·{' '}
+                {initials(review.gamesCompleted)} completed ·{' '}
                 {initials(review.reviewsWritten)} reviews
               </p>
             </div>
@@ -135,7 +135,7 @@ export default async function StatsPanel({
                           {g.logs}
                         </span>
                       </Link>
-                      {/* Proportional bar â€” the "at a glance" read that a bare
+                      {/* Proportional bar — the "at a glance" read that a bare
                           number does not give you. */}
                       <div
                         className="mt-1 h-1 overflow-hidden rounded-full bg-white/6"
@@ -185,8 +185,8 @@ export default async function StatsPanel({
 
             {stats.activeDays > 0 && (
               <p className="text-ink-faint mt-5 text-xs">
-                Logged on {initials(stats.activeDays)} separate days Â·{' '}
-                {initials(stats.distinctGames)} distinct games Â·{' '}
+                Logged on {initials(stats.activeDays)} separate days ·{' '}
+                {initials(stats.distinctGames)} distinct games ·{' '}
                 {initials(stats.completed)} completed
               </p>
             )}

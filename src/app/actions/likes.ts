@@ -36,7 +36,7 @@ export async function toggleLike(logId: unknown): Promise<LikeSummary> {
   //
   // The projection is `'*'`, not `'id'`. `log_likes` is keyed on
   // `(user_id, log_id)` and only gained a surrogate `id` in migration 002, so
-  // `select('id')` fails with 42703 on a pre-002 database â€” and PostgREST
+  // `select('id')` fails with 42703 on a pre-002 database — and PostgREST
   // returns that with an *empty* message. The error went unchecked, so
   // `existingRows` was null, the toggle always took the INSERT branch, and
   // un-liking was impossible. Naming no column makes the read valid on both

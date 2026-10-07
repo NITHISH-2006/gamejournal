@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   verify:
-    name: lint, typecheck, test, build
+    name: lint, typecheck, encoding, test, build
     runs-on: ubuntu-latest
 
     steps:
@@ -32,6 +32,12 @@ jobs:
 
       - name: Type check
         run: npm run type-check
+
+      - name: Encoding check
+        # Mojibake is invisible in a diff, passes lint, typecheck, tests and
+        # build, and renders directly to users — "Updatingâ€¦" was in the
+        # shipped header. Thirteen files here had it and nothing else noticed.
+        run: npm run check:encoding
 
       - name: Unit tests
         run: npm run test

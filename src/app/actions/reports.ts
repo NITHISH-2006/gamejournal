@@ -8,7 +8,7 @@ import { callerKey } from '@/lib/limiter';
 /**
  * Content reporting.
  *
- * â”€â”€ Why this file exists twice over â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * ── Why this file exists twice over ─────────────────────────────────────────
  *
  * The previous version of this app shipped a `ReportButton` and a
  * `reportContent` action, and the README advertised "Report content
@@ -17,7 +17,7 @@ import { callerKey } from '@/lib/limiter';
  * straight at the user. The feature had never worked.
  *
  * The second problem was structural: `reportContent` took the reporter's id
- * nowhere â€” it read the session â€” but it accepted an arbitrary `contentType` and
+ * nowhere — it read the session — but it accepted an arbitrary `contentType` and
  * `contentId` from the client with no validation, no rate limit, and a `reason`
  * that was never length-checked against the column's constraint. An insert into
  * an unconstrained column is a free-text storage primitive.

@@ -113,7 +113,7 @@ export async function updateProfile(updates: {
   }
 
   // Only fields the user actually changed. An untouched field is absent from the
-  // patch, so the server cannot null it Ã¢â‚¬â€ that is what stops saving an edit
+  // patch, so the server cannot null it — that is what stops saving an edit
   // from silently erasing the display name and bio.
   const patch: Database['public']['Tables']['profiles']['Update'] = {};
 
@@ -218,7 +218,7 @@ export type Suggestion = {
  * parameter. This is exported from a `'use server'` module, so it is a public
  * endpoint: with `currentUserId` as an argument, anyone could pass *another*
  * user's id and receive, for the 25 suggested profiles, that user's follow
- * state Ã¢â‚¬â€ a follow-graph oracle over arbitrary accounts. The `following` feed
+ * state — a follow-graph oracle over arbitrary accounts. The `following` feed
  * view was already fixed for the same reason; this was missed.
  */
 export async function getSuggestedUsers(): Promise<Suggestion[]> {
@@ -234,7 +234,7 @@ export async function getSuggestedUsers(): Promise<Suggestion[]> {
   //
   // The previous implementation selected the 25 *newest* profiles and then sorted
   // those 25 by log count in JavaScript, which could only reorder within that
-  // pool â€” so a genuinely active player who registered recently was invisible on
+  // pool � so a genuinely active player who registered recently was invisible on
   // any site with more than 25 users. It then issued 25 concurrent
   // `count: 'exact', head: true` requests on top, one per candidate, for a
   // homepage render. So: biased *and* 26 round trips.

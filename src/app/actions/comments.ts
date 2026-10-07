@@ -51,7 +51,7 @@ export async function getComments(logId: unknown): Promise<Comment[]> {
   // key's generated name cannot take the whole thread down.
   const authorIds = [...new Set(rows.map((r) => r.user_id as string))];
   // The error was previously discarded, so a transient failure attributed every
-  // comment in the thread to a user called "unknown" â€” a real person's comment
+  // comment in the thread to a user called "unknown" — a real person's comment
   // credited to a stranger, with nothing in the log to explain it.
   const { data: authors, error: authorError } = await supabase
     .from('profiles')
@@ -164,7 +164,7 @@ export async function getCommentsForLogs(
 
   const authorIds = [...new Set(rows.map((r) => r.user_id as string))];
   // The error was previously discarded, so a transient failure attributed every
-  // comment in the thread to a user called "unknown" â€” a real person's comment
+  // comment in the thread to a user called "unknown" — a real person's comment
   // credited to a stranger, with nothing in the log to explain it.
   const { data: authors, error: authorError } = await supabase
     .from('profiles')
@@ -223,7 +223,7 @@ export async function deleteComment(commentId: unknown): Promise<void> {
 
   // Resolve the parent log's game so only the affected page is invalidated.
   // Both comment mutations previously called `revalidateAll()`, so a single
-  // 1–1000 character comment on one log invalidated every ISR route in the
+  // 1�1000 character comment on one log invalidated every ISR route in the
   // application: the feed, every game page, every profile, every list and the
   // sitemap.
   const { data: parent } = await supabase

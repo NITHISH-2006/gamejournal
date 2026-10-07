@@ -12,7 +12,9 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "verify": "npm run lint && npm run type-check && npm run test && npm run build"
+    "check:encoding": "node scripts/check-encoding.mjs",
+    "fix:encoding": "node scripts/fix-mojibake.mjs --write",
+    "verify": "npm run lint && npm run type-check && npm run check:encoding && npm run test && npm run build"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

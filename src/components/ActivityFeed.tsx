@@ -57,7 +57,7 @@ export default function ActivityFeed({
    *     the home page, so it hydrates as part of a *streamed, deferred* subtree.
    *     Firing a Server Action from a `useEffect` during that hydration threw
    *     "An unexpected response was received from the server" every time, and
-   *     the action body never even executed â€” confirmed by instrumenting
+   *     the action body never even executed — confirmed by instrumenting
    *     `getFeedData`, which logged nothing while the client reported failure.
    *
    *  2. Even when it worked, the app's main content surface was 100%
@@ -96,7 +96,7 @@ export default function ActivityFeed({
     //
     // `rows` is only the page just fetched. Calling `setLikes(map)` meant that
     // after "Load more" the map held the new page alone, and the render below
-    // falls back to `{ count: 0, likedByMe: false }` for anything missing â€” so
+    // falls back to `{ count: 0, likedByMe: false }` for anything missing — so
     // every previously-loaded post snapped back to zero likes with an unfilled
     // heart, including posts the user had liked themselves.
     setLikes((prev) => ({ ...prev, ...map }));
@@ -130,7 +130,7 @@ export default function ActivityFeed({
     [loadLikes, toast]
   );
 
-  // Reload when the tab changes â€” but NOT on mount, because the server has
+  // Reload when the tab changes — but NOT on mount, because the server has
   // already supplied the `global` page. Firing an action on mount is what
   // produced the "unexpected response" failure, and it also threw away the
   // server-rendered content and replaced it with a skeleton.
@@ -186,7 +186,7 @@ export default function ActivityFeed({
     //
     // `/api/og/log/<uuid>` is the OG *asset*: a PNG that exists so that a link
     // to the page unfurls with a preview. Handing that URL to a human gave them
-    // a link to an image file â€” pasted into Discord it unfurls as an
+    // a link to an image file — pasted into Discord it unfurls as an
     // image-of-an-image, pasted into a browser it renders a bare PNG, and there
     // is no permalink for an individual log anywhere in the app.
     const shareUrl = `${window.location.origin}/game/${log.game_id}`;
@@ -303,7 +303,7 @@ export default function ActivityFeed({
                               @{log.username}
                             </Link>
                           )}
-                          {log.username && <span aria-hidden="true">Â·</span>}
+                          {log.username && <span aria-hidden="true">·</span>}
                           <span className="inline-flex items-center gap-1">
                             <CalendarDays className="size-3" aria-hidden="true" />
                             {formatDate(log.diary_date ?? log.created_at)}
@@ -323,8 +323,8 @@ export default function ActivityFeed({
                             <Check className="size-3.5 text-emerald-400" />
                           ) : (
                             /* The intermediate `copiedId === log.id` arm was
-                               unreachable â€” that condition had already matched
-                               in the branch above â€” so the Copy icon never
+                               unreachable — that condition had already matched
+                               in the branch above — so the Copy icon never
                                rendered at all. */
                             <Share2 className="size-3.5" />
                           )}
