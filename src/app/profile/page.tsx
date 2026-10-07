@@ -12,6 +12,7 @@ import CreateListModal from '@/components/CreateListModal';
 import EditProfileForm from '@/components/EditProfileForm';
 import StatsPanel from '@/components/StatsPanel';
 import ActivityHeatmap from '@/components/ActivityHeatmap';
+import LibraryImport from '@/components/LibraryImport';
 import FollowList from '@/components/FollowList';
 import LogActions from '@/components/LogActions';
 import { Card } from '@/components/ui/card';
@@ -158,6 +159,10 @@ export default async function ProfilePage() {
         followingCount={followCounts.following}
       />
 
+      {/* Onboarding. Importing an existing library is the difference between a
+          tracker people adopt and one they abandon after adding four games. */}
+      <LibraryImport />
+
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {tiles.map((tile) => (
           <StatTile key={tile.label} {...tile} />
@@ -169,8 +174,10 @@ export default async function ProfilePage() {
         <section>
           <h2 className="mb-4 font-heading text-lg font-bold tracking-tight">
             Your shelf
+            {/* The fetch is capped at 50, so the count has to say so rather than
+                implying the shelf ends there. */}
             <span className="ml-2 text-sm font-normal text-muted-foreground">
-              ({covers.length})
+              ({covers.length === 50 ? '50 most recent' : covers.length})
             </span>
           </h2>
           <div className="grid grid-cols-4 gap-2.5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10">
