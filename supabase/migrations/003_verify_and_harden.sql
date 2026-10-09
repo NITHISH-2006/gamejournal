@@ -637,8 +637,8 @@ select 50, 'data', 'follows has a composite uniqueness guarantee',
                 join pg_index i on i.indrelid = c.oid
                where c.relname = 'follows'
                  and i.indisunique
-                 and pg_get_indexdef(i.indexid) ilike '%follower_id%'
-                 and pg_get_indexdef(i.indexid) ilike '%following_id%'),
+                 and pg_get_indexdef(i.indexrelid) ilike '%follower_id%'
+                 and pg_get_indexdef(i.indexrelid) ilike '%following_id%'),
        'protects the follow toggle from double-insert';
 
 insert into _gj_health (ord, area, check_name, ok, detail)

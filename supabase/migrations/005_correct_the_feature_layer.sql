@@ -126,7 +126,7 @@ create or replace function public.browse_games(
              -- element and quietly return the wrong games.
              case when p_tag ~ '^[a-z0-9][a-z0-9\-_]*$' then lower(p_tag) end as tag,
              case when p_status in ('backlog','playing','completed','abandoned')
-                  then p_status end as st
+     then p_status::public.log_status end as st
     ),
     -- One row per game, with its aggregates. The WHERE clause is applied on
     -- `game_logs` *before* aggregating, which is what makes status, rating and
@@ -185,19 +185,14 @@ create or replace function public.browse_games(
       join public.games g on g.id = a.game_id
      where a.log_count >= (select min_logs from bounds)
      order by
-       case
-         when coalesce(p_sort, 'recent') = 'rating'
-           then a.avg_rating desc nulls last, a.log_count desc
-         when coalesce(p_sort, 'recent') = 'most_logged'
-           then a.log_count desc, a.log_count desc
-         when coalesce(p_sort, 'recent') = 'discussed'
-           then a.review_count desc, a.log_count desc
-         else a.last_activity desc nulls last
-       end,
-       -- A total order, so the sort is deterministic across pages. Without this
-       -- two rows with the same rating could swap places between page 1 and
-       -- page 2 and one would be skipped.
-       a.game_id asc
+        case when coalesce(p_sort, 'recent') = 'rating' then a.avg_rating end desc nulls last,
+        case when coalesce(p_sort, 'recent') = 'rating' then a.log_count end desc,
+        case when coalesce(p_sort, 'recent') = 'most_logged' then a.log_count end desc,
+        case when coalesce(p_sort, 'recent') = 'most_logged' then a.log_count end desc,
+        case when coalesce(p_sort, 'recent') = 'discussed' then a.review_count end desc,
+        case when coalesce(p_sort, 'recent') = 'discussed' then a.log_count end desc,
+        case when coalesce(p_sort, 'recent') = 'recent' then a.last_activity end desc nulls last,
+        a.game_id asc
      limit (select lim from bounds)
      offset (select off from bounds);
   $$;
